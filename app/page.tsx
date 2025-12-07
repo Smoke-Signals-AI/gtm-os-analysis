@@ -358,17 +358,26 @@ RULES:
   const parsePersonas = (content: string[]) => {
     const personas: {title: string; goal: string; jtbd: string}[] = [];
     const fullText = content.join(" ");
+    
     const personaChunks = fullText.split(/PERSONA:\s*/i).filter(chunk => chunk.trim());
+    
     personaChunks.forEach(chunk => {
       const persona = { title: "", goal: "", jtbd: "" };
-      const goalMatch = chunk.match(/^(.*?)(?:GOAL:|$)/i);
-      if (goalMatch) persona.title = goalMatch[1].trim();
-      const goalContentMatch = chunk.match(/GOAL:\s*(.*?)(?:JTBD:|$)/i);
-      if (goalContentMatch) persona.goal = goalContentMatch[1].trim();
-      const jtbdMatch = chunk.match(/JTBD:\s*(.*?)$/i);
+      
+      const titleMatch = chunk.match(/^([^]*?)(?=\s*GOAL:|$)/i);
+      if (titleMatch) persona.title = titleMatch[1].trim();
+      
+      const goalMatch = chunk.match(/GOAL:\s*([^]*?)(?=\s*JTBD:|$)/i);
+      if (goalMatch) persona.goal = goalMatch[1].trim();
+      
+      const jtbdMatch = chunk.match(/JTBD:\s*([^]*?)(?=\s*PERSONA:|$)/i);
       if (jtbdMatch) persona.jtbd = jtbdMatch[1].trim();
-      if (persona.title) personas.push(persona);
+      
+      if (persona.title && persona.title.length > 2) {
+        personas.push(persona);
+      }
     });
+    
     return personas.length > 0 ? personas : [{ title: content.join(" ").substring(0, 50), goal: "", jtbd: "" }];
   };
 
