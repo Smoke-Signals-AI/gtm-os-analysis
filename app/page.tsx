@@ -1,65 +1,676 @@
-import Image from "next/image";
+"use client";
+import { useState, useEffect } from 'react';
+
+const signalVendors = [
+  { id: "clay", name: "Clay", logo: "https://logo.clearbit.com/clay.com" },
+  { id: "apollo", name: "Apollo", logo: "https://logo.clearbit.com/apollo.io" },
+  { id: "zoominfo", name: "ZoomInfo", logo: "https://logo.clearbit.com/zoominfo.com" },
+  { id: "usergems", name: "UserGems", logo: "https://logo.clearbit.com/usergems.com" },
+  { id: "warmly", name: "Warmly", logo: "https://logo.clearbit.com/warmly.ai" },
+  { id: "commonroom", name: "Common Room", logo: "https://logo.clearbit.com/commonroom.io" }
+];
+
+const signalTypes = [
+  { id: "job_changes", label: "Job Changes", desc: "Contact role changes" },
+  { id: "funding", label: "Funding Events", desc: "Fundraising news" },
+  { id: "tech_installs", label: "Tech Stack", desc: "Technology adoption" },
+  { id: "intent_data", label: "Intent Data", desc: "Research behavior" },
+  { id: "website_visitors", label: "Website Visitors", desc: "De-anonymized" }
+];
+
+const steps = ["intro", "basic", "research-company", "research-icp", "research-competitive", "research-content", "signals", "alignment", "generating", "results"];
 
 export default function Home() {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [domain, setDomain] = useState("");
+  const [email, setEmail] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [role, setRole] = useState("");
+  const [companySize, setCompanySize] = useState("");
+  const [crm, setCrm] = useState("");
+  const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
+  const [selectedSignals, setSelectedSignals] = useState<string[]>([]);
+  const [alignment, setAlignment] = useState<{gtm?: string}>({});
+  const [research, setResearch] = useState({
+    company: { initial: "", feedback: "", refined: "", loading: false },
+    icp: { initial: "", feedback: "", refined: "", loading: false },
+    competitive: { initial: "", feedback: "", refined: "", loading: false },
+    content: { initial: "", feedback: "", refined: "", loading: false }
+  });
+  const [reportData, setReportData] = useState<{narrative: string; icp: string; content: string; competitive: string} | null>(null);
+
+  const cleanResponse = (text: string) => {
+    if (!text) return "";
+    let cleaned = text
+      .replace(/^.*?(?:I'll|I will|Let me|Based on|Here's|Here is|After|Now I'll).*?(?:research|search|analyze|create|provide|analysis).*$/gim, "")
+      .replace(/^.*?(?:web search|my search|searching|searched).*$/gim, "")
+      .replace(/^.*?ICP.*?(?:section|profile|for).*?:?\s*$/gim, "")
+      .replace(/^#{1,4}\s*/gm, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/^\s*[-*]\s+/gm, "")
+      .trim();
+    cleaned = cleaned.replace(/([a-z,])\s*\n+(?![A-Z]{2,})/g, "$1 ");
+    cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+    return cleaned;
+  };
+  
+  const cleanCompetitiveResponse = (text: string) => {
+    if (!text) return "";
+    let cleaned = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    cleaned = cleaned
+      .replace(/^.*?(?:I'll|I will|Let me|Based on|Here's|Here is|After|Now I'll).*?(?:research|search|analyze|create|provide|analysis).*$/gim, "")
+      .replace(/^.*?(?:web search|my search|searching|searched).*$/gim, "")
+      .replace(/^.*?ICP.*?(?:section|profile|for).*?:?\s*$/gim, "")
+      .replace(/^#{1,4}\s*/gm, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .trim();
+    const lines = cleaned.split("\n");
+    const result: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].trim();
+      if (!line) continue;
+      if (/^\|[\s\-:]+\|/.test(line) || /^[\-:|\s]+$/.test(line)) continue;
+      if (line.startsWith("|") && line.endsWith("|")) {
+        line = line.slice(1, -1).trim();
+      } else if (line.startsWith("|")) {
+        line = line.slice(1).trim();
+      } else if (line.endsWith("|")) {
+        line = line.slice(0, -1).trim();
+      }
+      line = line.replace(/^[-*•]\s+/, "");
+      if (line.includes("|")) {
+        line = line.split("|").map(p => p.trim()).join(" | ");
+        result.push(line);
+      } else if (/^[A-Z][A-Z\s\-:]+$/.test(line) && line.length >= 2 && line.length < 60) {
+        result.push(line);
+      } else {
+        const prevLine = result[result.length - 1];
+        if (prevLine && !prevLine.includes("|") && !/^[A-Z][A-Z\s\-:]+$/.test(prevLine)) {
+          result[result.length - 1] = prevLine + " " + line;
+        } else {
+          result.push(line);
+        }
+      }
+    }
+    return result.join("\n");
+  };
+
+  const callClaude = async (prompt: string) => {
+    try {
+      const searchPrompt = `Use your web_search tool to research this request. Search the web first, then provide your analysis.\n\n${prompt}`;
+      const response = await fetch("/api/claude", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4000,
+          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          messages: [{ role: "user", content: searchPrompt }]
+        })
+      });
+      if (!response.ok) {
+        return "API error: " + response.status + ". Please try again.";
+      }
+      const data = await response.json();
+      if (data.error) {
+        return "Error: " + (data.error.message || "Unknown error occurred");
+      }
+      const textContent = (data.content || [])
+        .filter((block: {type: string}) => block.type === "text")
+        .map((block: {text: string}) => block.text)
+        .join("\n");
+      return textContent || "No response generated. Please try again.";
+    } catch (error) {
+      return "Connection error: " + ((error as Error).message || "Please check your internet and try again.");
+    }
+  };
+
+  const getCompanyPrompt = () => `Search the web for "${domain}" to learn about this company.
+
+After researching, analyze ${domain} for a GTM diagnostic. Write directly TO the reader using "you/your".
+
+CRITICAL: Start your response with the first header "WHAT YOU DO" - no preamble.
+
+Use these exact ALL CAPS headers:
+
+WHAT YOU DO
+Describe in 2-3 sentences what the company does, who it serves, and its core value proposition.
+
+THE PROBLEM YOU SOLVE
+What specific pain point or challenge do you address for your customers?
+
+YOUR DIFFERENTIATION
+What makes you unique compared to alternatives?
+
+RULES:
+- NO PREAMBLE - start directly with WHAT YOU DO header
+- Write TO the reader using "you/your"
+- No markdown formatting`;
+
+  const getICPPrompt = () => {
+    const ctx = research.company.refined || research.company.initial || "";
+    const contextStr = cleanResponse(ctx).substring(0, 400);
+    return `Search the web for "${domain}" to understand their business and market.
+
+Create the ICP section for ${domain}. Write directly TO the reader using "you/your".
+
+${contextStr ? `Company Context: ${contextStr}` : ""}
+
+CRITICAL: Start with "YOUR IDEAL BUYERS" header - no preamble.
+
+Use these exact ALL CAPS headers:
+
+YOUR IDEAL BUYERS
+Describe the companies you should target: industry, size, growth stage.
+
+PERSONAS AND JOBS TO BE DONE
+List 3-4 key personas. For each:
+PERSONA: [Title]
+GOAL: [What outcome they want]
+JTBD: When [situation], I want to [action], so I can [outcome].
+
+SIGNAL SYSTEM
+Create exactly 6 alpha signals. Each row on its OWN LINE with pipe separators:
+
+Signal Name | Description | Motion Triggered
+
+RULES:
+- NO PREAMBLE
+- Each signal on its OWN LINE
+- 3 columns separated by |
+- 6 signals total`;
+  };
+
+  const getCompetitivePrompt = () => `Search the web for "${domain}" competitors.
+
+CRITICAL: Start with "COMPETITIVE LANDSCAPE" header - no preamble.
+
+Use this EXACT structure:
+
+COMPETITIVE LANDSCAPE
+[2-3 sentences about the market]
+
+COMPARISON TABLE
+Competitor1 | Their Strength | Their Weakness | Where You Win
+Competitor2 | Their Strength | Their Weakness | Where You Win
+(5 competitors total)
+
+YOUR COMPETITIVE MOAT
+[What makes ${domain} hard to compete with]
+
+RULES:
+- NO PREAMBLE
+- Competitor names 1-3 words only
+- Each row has exactly 4 pipe-separated values`;
+
+  const getContentPrompt = () => {
+    const ctx = research.icp.refined || research.icp.initial;
+    return `Search the web for "${domain}" content - blog, LinkedIn, podcasts.
+
+Analyze content strategy. Write TO the reader using "you/your".
+
+CRITICAL: Start with "CONTENT OVERVIEW" header - no preamble.
+
+CONTENT OVERVIEW
+What content you produce.
+
+ICP ALIGNMENT
+Does your content address what buyers care about?
+
+LINKEDIN PRESENCE
+How visible are you on LinkedIn?
+
+CONTENT GRADE: [A/B/C/D/F]
+One sentence explanation.
+
+HOW TO IMPROVE
+3-4 specific recommendations.
+
+RULES:
+- NO PREAMBLE
+- Write TO reader using "you/your"`;
+  };
+
+  const runResearchPhase = async (phase: string) => {
+    const prompts: {[key: string]: () => string} = { company: getCompanyPrompt, icp: getICPPrompt, competitive: getCompetitivePrompt, content: getContentPrompt };
+    setResearch(prev => ({ ...prev, [phase]: { ...prev[phase as keyof typeof prev], loading: true } }));
+    try {
+      const result = await callClaude(prompts[phase]());
+      setResearch(prev => ({ ...prev, [phase]: { ...prev[phase as keyof typeof prev], initial: result, loading: false } }));
+    } catch {
+      setResearch(prev => ({ ...prev, [phase]: { ...prev[phase as keyof typeof prev], initial: "Error loading data.", loading: false } }));
+    }
+  };
+
+  const parseIntoSections = (text: string) => {
+    if (!text) return [{ title: "", content: ["No data"] }];
+    const sections: {title: string; content: string[]}[] = [];
+    const lines = text.split("\n");
+    let current = { title: "", content: [] as string[] };
+    for (let i = 0; i < lines.length && i < 200; i++) {
+      const trimmed = lines[i].trim();
+      if (!trimmed) continue;
+      const isHeader = /^[A-Z][A-Z\s\-:]+$/.test(trimmed) && trimmed.length >= 2 && trimmed.length < 60;
+      if (isHeader) {
+        if (current.title || current.content.length > 0) sections.push(current);
+        current = { title: trimmed.replace(/:$/, ""), content: [] };
+      } else {
+        current.content.push(trimmed);
+      }
+    }
+    if (current.title || current.content.length > 0) sections.push(current);
+    return sections.length > 0 ? sections : [{ title: "", content: ["No data"] }];
+  };
+
+  const formatResearchOutput = (text: string, type: string) => {
+    const cleaned = (type === "competitive" || type === "icp") ? cleanCompetitiveResponse(text) : cleanResponse(text);
+    const sections = parseIntoSections(cleaned);
+    const filteredSections = sections.filter(sec => sec.title !== "WHY" && sec.title !== "WHY IT MATTERS");
+    
+    return filteredSections.map((sec, i) => {
+      const hasCompetitorTable = type === "competitive" && sec.content.some(line => (line.match(/\|/g) || []).length >= 2);
+      const titleLooksLikeSignal = sec.title && (sec.title.includes("SIGNAL") || sec.title.includes("ALPHA") || sec.title.includes("BUYING"));
+      const contentHasSignalTable = sec.content.some(line => { const pc = (line.match(/\|/g) || []).length; return pc >= 1 && pc <= 3; });
+      const hasSignalTable = titleLooksLikeSignal && contentHasSignalTable;
+      const isPersonaSection = sec.title && (sec.title.includes("PERSONA") || sec.title.includes("JOBS"));
+      
+      return (
+        <div key={i} className="mb-6 pb-5 border-b border-white/10 last:border-0">
+          {sec.title && <div className="text-xs font-semibold text-rose-500 uppercase tracking-wider mb-3">{sec.title}</div>}
+          <div className="text-white/90 leading-relaxed">
+            {hasSignalTable && (
+              <>
+                <div className="grid grid-cols-3 gap-3 py-3 border-b-2 border-green-500/50 text-xs font-bold uppercase tracking-wide mb-2">
+                  <span className="text-green-400">Signal</span>
+                  <span className="text-white/70">Description</span>
+                  <span className="text-blue-400">Motion Triggered</span>
+                </div>
+                {sec.content.map((line, j) => {
+                  if (!line.includes("|")) return null;
+                  const parts = line.split("|").map(p => p.trim());
+                  if (parts.length < 2) return null;
+                  return (
+                    <div key={j} className="grid grid-cols-3 gap-3 py-3 border-b border-white/10 text-sm items-start">
+                      <span className="font-semibold text-green-400">{parts[0]}</span>
+                      <span className="text-white/70">{parts[1] || "—"}</span>
+                      <span className="text-blue-400">{parts[2] || "—"}</span>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+            {hasCompetitorTable && (
+              <>
+                <div className="grid grid-cols-4 gap-3 py-3 border-b-2 border-rose-500/50 text-xs font-bold uppercase tracking-wide mb-2">
+                  <span className="text-white">Competitor</span>
+                  <span className="text-green-400">Their Strength</span>
+                  <span className="text-orange-400">Their Weakness</span>
+                  <span className="text-rose-400">Where You Win</span>
+                </div>
+                {sec.content.map((line, j) => {
+                  if (!line.includes("|")) return null;
+                  const parts = line.split("|").map(p => p.trim()).filter(p => p.length > 0);
+                  if (parts.length < 2) return null;
+                  let competitorName = parts[0];
+                  if (competitorName.length > 25) competitorName = competitorName.split(" ").slice(-2).join(" ");
+                  return (
+                    <div key={j} className="grid grid-cols-4 gap-3 py-3 border-b border-white/10 text-sm items-start">
+                      <span className="font-semibold text-white">{competitorName}</span>
+                      <span className="text-green-400">{parts[1] || "—"}</span>
+                      <span className="text-orange-400">{parts[2] || "—"}</span>
+                      <span className="text-rose-400 font-medium">{parts[3] || "—"}</span>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+            {isPersonaSection && (
+              <div className="space-y-4">
+                {parsePersonas(sec.content).map((persona, j) => (
+                  <div key={j} className="bg-gradient-to-br from-purple-500/10 to-purple-500/5 border border-purple-500/30 rounded-xl p-5">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center text-lg">👤</div>
+                      <div>
+                        <div className="font-semibold text-purple-400">{persona.title}</div>
+                        {persona.goal && <div className="text-sm text-white/60">{persona.goal}</div>}
+                      </div>
+                    </div>
+                    {persona.jtbd && (
+                      <div className="bg-black/20 rounded-lg p-4 mt-3">
+                        <div className="text-xs text-purple-400 uppercase tracking-wide mb-2">Job to Be Done</div>
+                        <p className="text-sm italic text-white/80">&quot;{persona.jtbd}&quot;</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {!hasCompetitorTable && !hasSignalTable && !isPersonaSection && (
+              sec.content.map((line, j) => <p key={j} className="mb-3 last:mb-0">{line}</p>)
+            )}
+          </div>
+        </div>
+      );
+    });
+  };
+  
+  const parsePersonas = (content: string[]) => {
+    const personas: {title: string; goal: string; jtbd: string}[] = [];
+    const fullText = content.join(" ");
+    const personaChunks = fullText.split(/PERSONA:\s*/i).filter(chunk => chunk.trim());
+    personaChunks.forEach(chunk => {
+      const persona = { title: "", goal: "", jtbd: "" };
+      const goalMatch = chunk.match(/^(.*?)(?:GOAL:|$)/i);
+      if (goalMatch) persona.title = goalMatch[1].trim();
+      const goalContentMatch = chunk.match(/GOAL:\s*(.*?)(?:JTBD:|$)/i);
+      if (goalContentMatch) persona.goal = goalContentMatch[1].trim();
+      const jtbdMatch = chunk.match(/JTBD:\s*(.*?)$/i);
+      if (jtbdMatch) persona.jtbd = jtbdMatch[1].trim();
+      if (persona.title) personas.push(persona);
+    });
+    return personas.length > 0 ? personas : [{ title: content.join(" ").substring(0, 50), goal: "", jtbd: "" }];
+  };
+
+  const nextStep = () => { if (currentStep < steps.length - 1) setCurrentStep(currentStep + 1); };
+  const prevStep = () => { if (currentStep > 0) setCurrentStep(currentStep - 1); };
+
+  const startDiagnostic = () => {
+    if (!websiteUrl) { alert("Please enter URL"); return; }
+    const d = websiteUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    setDomain(d);
+    nextStep();
+  };
+
+  const saveBasicAndNext = () => {
+    if (!email) { alert("Please enter email"); return; }
+    nextStep();
+  };
+
+  useEffect(() => {
+    const step = steps[currentStep];
+    const phases: {[key: string]: string} = { "research-company": "company", "research-icp": "icp", "research-competitive": "competitive", "research-content": "content" };
+    const currentPhase = phases[step];
+    if (currentPhase) {
+      const phaseData = research[currentPhase as keyof typeof research];
+      if (!phaseData.initial && !phaseData.loading) runResearchPhase(currentPhase);
+    }
+    if (step === "basic" && domain) {
+      const companyData = research.company;
+      if (!companyData.initial && !companyData.loading) runResearchPhase("company");
+    }
+    if (step === "generating" && !reportData) generateReport();
+  }, [currentStep, domain]);
+
+  const generateReport = async () => {
+    const getR = (k: string) => cleanResponse(research[k as keyof typeof research].refined || research[k as keyof typeof research].initial || "");
+    const getCompetitive = () => research.competitive.refined || research.competitive.initial || "";
+    const narrative = await callClaude(`Write an executive narrative for ${companyName || domain}. Write TO the reader using "you/your".
+
+Context: ${getR("company").substring(0, 300)}
+ICP: ${getR("icp").substring(0, 200)}
+GTM maturity: ${alignment.gtm || "unknown"}
+
+CRITICAL: Start immediately with the first paragraph - no preamble.
+
+Write 3 paragraphs:
+1. What you do well and your market opportunity
+2. The gap between where you are and where you could be
+3. The vision of what's possible with a systematic GTM approach
+
+Rules:
+- NO PREAMBLE
+- Write TO them using "you/your"
+- Be specific, not generic
+- No markdown`);
+    setReportData({ narrative, icp: research.icp.refined || research.icp.initial || "", content: getR("content"), competitive: getCompetitive() });
+    setCurrentStep(steps.indexOf("results"));
+  };
+
+  const renderStepIndicator = () => (
+    <div className="flex justify-center gap-1.5 mb-7">
+      {steps.map((_, i) => (
+        <div key={i} className={`w-2.5 h-2.5 rounded-full transition-all ${i < currentStep ? "bg-green-500" : i === currentStep ? "bg-rose-500 scale-125" : "bg-white/15"}`} />
+      ))}
+    </div>
+  );
+
+  const renderIntro = () => (
+    <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11 text-center">
+      <div className="text-5xl mb-6">🔬</div>
+      <h2 className="font-bold text-2xl mb-3">Get Your Custom GTM Analysis</h2>
+      <p className="text-white/60 mb-8 max-w-md mx-auto">Enter your website for AI-powered analysis of your company, customers, and competitors.</p>
+      <div className="max-w-sm mx-auto">
+        <input type="url" placeholder="https://yourcompany.com" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} className="w-full bg-white/5 border border-white/15 rounded-lg px-4 py-4 text-white text-center mb-4 outline-none focus:border-rose-500" />
+        <button onClick={startDiagnostic} className="w-full bg-gradient-to-r from-rose-500 to-rose-600 text-white py-4 px-8 rounded-lg font-semibold hover:shadow-lg hover:shadow-rose-500/30 transition-all">Start Analysis →</button>
+      </div>
+      <p className="mt-6 text-sm text-white/40">5-7 minutes • AI research • PDF report</p>
+    </div>
+  );
+
+  const renderBasic = () => (
+    <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11">
+      <h2 className="font-bold text-2xl mb-3">Quick Details</h2>
+      <p className="text-white/60 mb-8">Helps personalize your report.</p>
+      <div className="space-y-6">
+        <div>
+          <label className="block mb-3 font-medium">Email</label>
+          <input type="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/15 rounded-lg px-4 py-4 text-white outline-none focus:border-rose-500" />
+        </div>
+        <div>
+          <label className="block mb-3 font-medium">Company</label>
+          <input type="text" placeholder="Acme Inc" value={companyName} onChange={(e) => setCompanyName(e.target.value)} className="w-full bg-white/5 border border-white/15 rounded-lg px-4 py-4 text-white outline-none focus:border-rose-500" />
+        </div>
+        <div>
+          <label className="block mb-3 font-medium">Role</label>
+          <input type="text" placeholder="VP Marketing" value={role} onChange={(e) => setRole(e.target.value)} className="w-full bg-white/5 border border-white/15 rounded-lg px-4 py-4 text-white outline-none focus:border-rose-500" />
+        </div>
+        <div>
+          <label className="block mb-3 font-medium">Company size</label>
+          <div className="flex flex-wrap gap-2">
+            {["1-10", "11-50", "51-200", "201-500", "500+"].map((opt) => (
+              <button key={opt} onClick={() => setCompanySize(opt)} className={`px-4 py-3 rounded-lg border-2 transition-all ${companySize === opt ? "border-rose-500 bg-rose-500/10" : "border-white/15 bg-white/5 hover:border-rose-500/40"}`}>{opt}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="block mb-3 font-medium">CRM</label>
+          <div className="flex flex-wrap gap-2">
+            {["HubSpot", "Salesforce", "Other", "None"].map((opt) => (
+              <button key={opt} onClick={() => setCrm(opt)} className={`px-4 py-3 rounded-lg border-2 transition-all ${crm === opt ? "border-rose-500 bg-rose-500/10" : "border-white/15 bg-white/5 hover:border-rose-500/40"}`}>{opt}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="flex gap-3 mt-7">
+        <button onClick={prevStep} className="bg-white/5 border border-white/15 text-white py-4 px-8 rounded-lg font-medium hover:bg-white/10 transition-all">← Back</button>
+        <button onClick={saveBasicAndNext} className="flex-1 bg-gradient-to-r from-rose-500 to-rose-600 text-white py-4 px-8 rounded-lg font-semibold hover:shadow-lg hover:shadow-rose-500/30 transition-all">Continue →</button>
+      </div>
+    </div>
+  );
+
+  const renderResearch = (phaseKey: string, title: string) => {
+    const r = research[phaseKey as keyof typeof research];
+    if (r.loading || !r.initial) {
+      return (
+        <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11">
+          <div className="text-center py-12">
+            <div className="w-12 h-12 border-4 border-white/10 border-t-rose-500 rounded-full animate-spin mx-auto mb-5" />
+            <h3 className="font-semibold text-xl mb-2">Analyzing {domain}</h3>
+            <p className="text-white/60">Researching {title.toLowerCase()}...</p>
+          </div>
+        </div>
+      );
+    }
+    const displayText = r.refined || r.initial;
+    const isRefined = !!r.refined;
+    return (
+      <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11">
+        <div className={`inline-block px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide mb-4 ${isRefined ? "bg-green-500/15 text-green-500" : "bg-rose-500/15 text-rose-500"}`}>{isRefined ? "✓ REFINED" : "INITIAL ANALYSIS"}</div>
+        <h2 className="font-bold text-2xl mb-2">{title}</h2>
+        <p className="text-white/60 mb-2">Review and add corrections if needed.</p>
+        <div className="bg-gradient-to-br from-black/40 to-black/20 border border-white/10 rounded-2xl p-7 my-6">{formatResearchOutput(displayText, phaseKey)}</div>
+        <div className="bg-gradient-to-br from-rose-500/10 to-rose-500/5 border border-rose-500/20 rounded-xl p-6 mt-6">
+          <div className="font-medium mb-3">Anything to correct?</div>
+          <textarea rows={3} placeholder="e.g., We focus on enterprise..." value={r.feedback} onChange={(e) => setResearch(prev => ({ ...prev, [phaseKey]: { ...prev[phaseKey as keyof typeof prev], feedback: e.target.value } }))} className="w-full bg-white/5 border border-white/15 rounded-lg px-4 py-4 text-white outline-none focus:border-rose-500 resize-y" />
+          <button onClick={async () => {
+            if (!r.feedback.trim()) return;
+            setResearch(prev => ({ ...prev, [phaseKey]: { ...prev[phaseKey as keyof typeof prev], loading: true } }));
+            const prompt = `Original:\n${r.initial}\n\nFeedback:\n${r.feedback}\n\nUpdate with same ALL CAPS headers. Write TO them. No preamble.`;
+            const refined = await callClaude(prompt);
+            setResearch(prev => ({ ...prev, [phaseKey]: { ...prev[phaseKey as keyof typeof prev], refined, loading: false } }));
+          }} className="mt-3 px-6 py-3 rounded-lg border-2 border-rose-500 text-rose-500 font-semibold hover:bg-rose-500/10 transition-all">Refine</button>
+        </div>
+        <div className="flex gap-3 mt-7">
+          <button onClick={prevStep} className="bg-white/5 border border-white/15 text-white py-4 px-8 rounded-lg font-medium hover:bg-white/10 transition-all">← Back</button>
+          <button onClick={nextStep} className="flex-1 bg-gradient-to-r from-rose-500 to-rose-600 text-white py-4 px-8 rounded-lg font-semibold hover:shadow-lg hover:shadow-rose-500/30 transition-all">Looks Good →</button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderSignals = () => (
+    <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11">
+      <h2 className="font-bold text-2xl mb-3">Your Signal Stack</h2>
+      <p className="text-white/60 mb-6">Which tools detect buying signals?</p>
+      <div className="grid grid-cols-3 gap-3 mb-8">
+        {signalVendors.map((v) => (
+          <div key={v.id} onClick={() => setSelectedVendors(prev => prev.includes(v.id) ? prev.filter(x => x !== v.id) : [...prev, v.id])} className={`p-4 rounded-xl border-2 cursor-pointer text-center transition-all ${selectedVendors.includes(v.id) ? "border-rose-500 bg-rose-500/10" : "border-white/15 bg-white/5 hover:border-rose-500/40"}`}>
+            <img src={v.logo} alt={v.name} className="w-11 h-11 object-contain rounded-lg bg-white p-1 mx-auto mb-2" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <div className="text-xs font-semibold">{v.name}</div>
+          </div>
+        ))}
+        <div onClick={() => setSelectedVendors(prev => prev.includes("none") ? prev.filter(x => x !== "none") : [...prev, "none"])} className={`p-4 rounded-xl border-2 cursor-pointer text-center transition-all ${selectedVendors.includes("none") ? "border-rose-500 bg-rose-500/10" : "border-white/15 bg-white/5 hover:border-rose-500/40"}`}>
+          <div className="text-3xl mb-2">🚫</div>
+          <div className="text-xs font-semibold">None</div>
+        </div>
+      </div>
+      <h3 className="text-lg font-semibold text-rose-500 mt-8 mb-4">What signals do you track?</h3>
+      <div className="grid grid-cols-2 gap-2">
+        {signalTypes.map((s) => (
+          <div key={s.id} onClick={() => setSelectedSignals(prev => prev.includes(s.id) ? prev.filter(x => x !== s.id) : [...prev, s.id])} className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${selectedSignals.includes(s.id) ? "border-rose-500 bg-rose-500/10" : "border-white/15 bg-white/5 hover:border-rose-500/40"}`}>
+            <div className="font-semibold text-sm">{s.label}</div>
+            <div className="text-xs text-white/40">{s.desc}</div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-3 mt-7">
+        <button onClick={prevStep} className="bg-white/5 border border-white/15 text-white py-4 px-8 rounded-lg font-medium hover:bg-white/10 transition-all">← Back</button>
+        <button onClick={nextStep} className="flex-1 bg-gradient-to-r from-rose-500 to-rose-600 text-white py-4 px-8 rounded-lg font-semibold hover:shadow-lg hover:shadow-rose-500/30 transition-all">Continue →</button>
+      </div>
+    </div>
+  );
+
+  const renderAlignment = () => (
+    <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11">
+      <h2 className="font-bold text-2xl mb-3">Team Alignment</h2>
+      <p className="text-white/60 mb-8">How connected are Marketing, Sales, CS?</p>
+      <div className="space-y-6">
+        <div>
+          <label className="block mb-3 font-medium">GTM motion?</label>
+          <div className="flex flex-col gap-2">
+            {[{ v: "random", l: "Random acts of GTM" }, { v: "siloed", l: "Siloed teams" }, { v: "coordinated", l: "Coordinated but gaps" }, { v: "integrated", l: "Integrated" }, { v: "unified", l: "Unified revenue engine" }].map((opt) => (
+              <button key={opt.v} onClick={() => setAlignment(prev => ({ ...prev, gtm: opt.v }))} className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-all ${alignment.gtm === opt.v ? "border-rose-500 bg-rose-500/10" : "border-white/15 bg-white/5 hover:border-rose-500/40"}`}>{opt.l}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="flex gap-3 mt-7">
+        <button onClick={prevStep} className="bg-white/5 border border-white/15 text-white py-4 px-8 rounded-lg font-medium hover:bg-white/10 transition-all">← Back</button>
+        <button onClick={() => setCurrentStep(steps.indexOf("generating"))} className="flex-1 bg-gradient-to-r from-rose-500 to-rose-600 text-white py-4 px-8 rounded-lg font-semibold hover:shadow-lg hover:shadow-rose-500/30 transition-all">Generate Report →</button>
+      </div>
+    </div>
+  );
+
+  const renderGenerating = () => (
+    <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11">
+      <div className="text-center py-12">
+        <div className="w-12 h-12 border-4 border-white/10 border-t-rose-500 rounded-full animate-spin mx-auto mb-5" />
+        <h3 className="font-semibold text-xl mb-2">Building Your Report</h3>
+        <p className="text-white/60">Synthesizing research...</p>
+      </div>
+    </div>
+  );
+
+  const renderResults = () => {
+    if (!reportData) return renderGenerating();
+    const downloadPDF = () => {
+      const safeClean = (text: string) => text ? cleanResponse(text) : "(No data)";
+      const content = `GTM OPERATING SYSTEM DIAGNOSTIC\nFor: ${companyName || domain || "Company"}\nGenerated by Smoke Signals AI\n\nEXECUTIVE NARRATIVE\n${safeClean(reportData?.narrative)}\n\nICP & ALPHA SIGNALS\n${safeClean(reportData?.icp)}\n\nCONTENT STRATEGY\n${safeClean(reportData?.content)}\n\nCOMPETITIVE LANDSCAPE\n${safeClean(reportData?.competitive)}\n\n---\nBook your Signals Strategy Session at smokesignals.ai`.trim();
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `GTM-Diagnostic-${(domain || "report").replace(/[^a-z0-9]/gi, '-')}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+    return (
+      <div className="space-y-6">
+        <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11 text-center">
+          <div className="text-5xl mb-5">📊</div>
+          <h2 className="font-bold text-3xl mb-3">Your GTM OS Report</h2>
+          <p className="text-white/60 mb-7">For {companyName || domain}</p>
+          <button onClick={downloadPDF} className="bg-white/10 border border-white/20 text-white py-3 px-6 rounded-lg font-medium hover:bg-white/15 transition-all inline-flex items-center gap-2">📄 Download Report</button>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11 border-l-4 border-l-rose-500">
+          <h3 className="font-bold text-lg text-rose-500 uppercase tracking-wide pb-4 mb-5 border-b border-white/10">Executive Narrative</h3>
+          <div className="text-white/90 leading-relaxed text-lg">{cleanResponse(reportData.narrative).split("\n\n").map((p, i) => <p key={i} className="mb-5 last:mb-0">{p}</p>)}</div>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11 border-l-4 border-l-green-500">
+          <h3 className="font-bold text-xl text-green-400 uppercase tracking-wide pb-4 mb-5 border-b border-white/10">Your ICP & Alpha Signals</h3>
+          <div className="text-white/90 leading-relaxed">{formatResearchOutput(reportData.icp, "icp")}</div>
+        </div>
+        {reportData.competitive && (
+          <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11 border-l-4 border-l-orange-500">
+            <h3 className="font-bold text-xl text-orange-400 uppercase tracking-wide pb-4 mb-5 border-b border-white/10">Competitive Landscape</h3>
+            <div className="text-white/90 leading-relaxed">{formatResearchOutput(reportData.competitive, "competitive")}</div>
+          </div>
+        )}
+        {reportData.content && (
+          <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11 border-l-4 border-l-purple-500">
+            <h3 className="font-bold text-xl text-purple-400 uppercase tracking-wide pb-4 mb-5 border-b border-white/10">Content Strategy</h3>
+            <div className="text-white/90 leading-relaxed">{formatResearchOutput(reportData.content, "content")}</div>
+          </div>
+        )}
+        <div className="bg-gradient-to-br from-rose-500/15 to-slate-800/50 border border-rose-500/30 rounded-2xl p-11 text-center">
+          <h2 className="font-bold text-2xl mb-3">You&apos;ll leave with a signal-based GTM strategy.</h2>
+          <p className="text-white/60 mb-6 max-w-md mx-auto">No pitch. Just value.</p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button onClick={downloadPDF} className="bg-white/10 border border-white/20 text-white py-4 px-8 rounded-lg font-medium hover:bg-white/15 transition-all">📄 Download Report</button>
+            <a href="https://smokesignals.ai/meetings/nick-zeckets/advisory-sales-call" target="_blank" rel="noopener noreferrer">
+              <button className="bg-gradient-to-r from-rose-500 to-rose-600 text-white py-4 px-9 rounded-lg font-semibold text-lg hover:shadow-lg hover:shadow-rose-500/30 transition-all w-full">Book a Signals Strategy Session →</button>
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const step = steps[currentStep];
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 text-white" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}>
+      <div className="max-w-3xl mx-auto">
+        <div className="text-center mb-8">
+          <img src="https://smokesignals.ai/hs-fs/hubfs/Smoke_Signals/img/smokesignal-logo.png" alt="Smoke Signals AI" className="h-10 mx-auto mb-4" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          <h1 className="text-3xl font-bold">GTM Operating System Diagnostic</h1>
+          <p className="text-white/60 mt-2">AI-powered analysis of your go-to-market engine</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        {renderStepIndicator()}
+        {step === "intro" && renderIntro()}
+        {step === "basic" && renderBasic()}
+        {step === "research-company" && renderResearch("company", "Company Analysis")}
+        {step === "research-icp" && renderResearch("icp", "Ideal Customer Profile")}
+        {step === "research-competitive" && renderResearch("competitive", "Competitive Landscape")}
+        {step === "research-content" && renderResearch("content", "Content Strategy")}
+        {step === "signals" && renderSignals()}
+        {step === "alignment" && renderAlignment()}
+        {step === "generating" && renderGenerating()}
+        {step === "results" && renderResults()}
+      </div>
     </div>
   );
 }
