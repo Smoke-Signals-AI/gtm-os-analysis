@@ -606,7 +606,24 @@ Rules:
           <button onClick={async () => {
             if (!r.feedback.trim()) return;
             setResearch(prev => ({ ...prev, [phaseKey]: { ...prev[phaseKey as keyof typeof prev], loading: true } }));
-            const prompt = `Original:\n${r.initial}\n\nFeedback:\n${r.feedback}\n\nUpdate with same ALL CAPS headers. Write TO them. No preamble.`;
+            const prompt = `You are an expert GTM strategist. Below is your original analysis and the user's feedback.
+
+ORIGINAL ANALYSIS:
+${r.initial}
+
+USER FEEDBACK:
+${r.feedback}
+
+CRITICAL INSTRUCTIONS:
+1. You are the expert. Do NOT simply accept all feedback.
+2. If feedback provides useful CONTEXT (company details, market info, corrections to facts), incorporate it.
+3. If feedback tries to CHANGE your strategic recommendations without good reason, push back. Explain why your original position is correct.
+4. If feedback contradicts GTM best practices, politely disagree and maintain your expert stance.
+5. At the end, add a section called "ANALYST NOTES" that briefly explains:
+   - What feedback you incorporated and why
+   - What feedback you respectfully disagreed with and why
+
+Use the same ALL CAPS headers as the original. Write TO them using "you/your". No preamble - start with the first header.`;
             const refined = await callClaude(prompt);
             setResearch(prev => ({ ...prev, [phaseKey]: { ...prev[phaseKey as keyof typeof prev], refined, loading: false } }));
           }} className="mt-3 px-6 py-3 rounded-lg border-2 border-rose-500 text-rose-500 font-semibold hover:bg-rose-500/10 transition-all">Refine</button>
