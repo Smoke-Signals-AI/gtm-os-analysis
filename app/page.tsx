@@ -406,14 +406,17 @@ RULES:
   const saveBasicAndNext = async () => {
     if (!email) { alert("Please enter email"); return; }
     
-    // Send initial data to HubSpot
+    // Send contact data to HubSpot
     try {
       await fetch("/api/hubspot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email,
+          objectType: "contacts",
+          searchProperty: "email",
+          searchValue: email,
           properties: {
+            email,
             company: companyName,
             jobtitle: role,
             website: domain,
@@ -421,7 +424,7 @@ RULES:
         })
       });
     } catch (e) {
-      console.error("HubSpot initial sync error:", e);
+      console.error("HubSpot contact sync error:", e);
     }
     
     nextStep();
@@ -479,14 +482,18 @@ Rules:
     const gradeMatch = contentText.match(/CONTENT GRADE:\s*([A-F])/i);
     const contentGrade = gradeMatch ? gradeMatch[1].toUpperCase() : "";
     
-    // Send full analysis to HubSpot
+   // Send analysis data to HubSpot Company
     try {
       await fetch("/api/hubspot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email,
+          objectType: "companies",
+          searchProperty: "domain",
+          searchValue: domain,
           properties: {
+            domain,
+            name: companyName || domain,
             gtm_company_analysis: getR("company").substring(0, 65000),
             gtm_icp_summary: getR("icp").substring(0, 65000),
             gtm_competitive: cleanCompetitiveResponse(getCompetitive()).substring(0, 65000),
@@ -498,7 +505,7 @@ Rules:
         })
       });
     } catch (e) {
-      console.error("HubSpot analysis sync error:", e);
+      console.error("HubSpot company sync error:", e);
     }
     
     setCurrentStep(steps.indexOf("results"));
