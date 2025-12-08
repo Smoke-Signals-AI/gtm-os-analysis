@@ -18,8 +18,7 @@ const signalTypes = [
   { id: "website_visitors", label: "Website Visitors", desc: "De-anonymized" }
 ];
 
-const steps = ["intro", "basic", "research-company", "research-icp", "research-competitive", "research-content", "signals", "alignment", "generating", "results"];
-
+const steps = ["intro", "select-product", "basic", "research-company", "research-icp", "research-competitive", "research-content", "signals", "alignment", "generating", "results"];
 export default function Home() {
   const [currentStep, setCurrentStep] = useState(0);
   const [websiteUrl, setWebsiteUrl] = useState("");
@@ -40,6 +39,9 @@ export default function Home() {
   });
   const [reportData, setReportData] = useState<{narrative: string; icp: string; content: string; competitive: string} | null>(null);
   const [contactId, setContactId] = useState<string | null>(null);
+  const [products, setProducts] = useState<string[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState("");
+  const [productsLoading, setProductsLoading] = useState(false);
 
   const cleanResponse = (text: string) => {
     if (!text) return "";
@@ -127,17 +129,14 @@ export default function Home() {
     }
   };
 
-  const getCompanyPrompt = () => `Search the web for "${domain}" to learn about this company.
-
-After researching, analyze ${domain} for a GTM diagnostic. Write directly TO the reader using "you/your".
-
+const getCompanyPrompt = () => `Search the web for "${domain}" and specifically their "${selectedProduct}" product/offering.
+After researching, analyze ${domain}'s "${selectedProduct}" for a GTM diagnostic. Write directly TO the reader using "you/your".
 CRITICAL: Start your response with the first header "WHAT YOU DO" - no preamble.
 
 Use these exact ALL CAPS headers:
 
 WHAT YOU DO
-Describe in 2-3 sentences what the company does, who it serves, and its core value proposition.
-
+Describe in 2-3 sentences what "${selectedProduct}" does, who it serves, and its core value proposition.
 THE PROBLEM YOU SOLVE
 What specific pain point or challenge do you address for your customers?
 
@@ -152,10 +151,8 @@ RULES:
   const getICPPrompt = () => {
     const ctx = research.company.refined || research.company.initial || "";
     const contextStr = cleanResponse(ctx).substring(0, 400);
-    return `Search the web for "${domain}" to understand their business and market.
-
-Create the ICP section for ${domain}. Write directly TO the reader using "you/your".
-
+return `Search the web for "${domain}" and their "${selectedProduct}" to understand the business and market.
+Create the ICP section for ${domain}'s "${selectedProduct}". Write directly TO the reader using "you/your".
 ${contextStr ? `Company Context: ${contextStr}` : ""}
 
 CRITICAL: Start with "YOUR IDEAL BUYERS" header - no preamble.
@@ -183,8 +180,7 @@ RULES:
 - 6 signals total`;
   };
 
-  const getCompetitivePrompt = () => `Search the web for "${domain}" competitors.
-
+const getCompetitivePrompt = () => `Search the web for "${domain}" "${selectedProduct}" competitors.
 CRITICAL: Start with "COMPETITIVE LANDSCAPE" header - no preamble.
 
 Use this EXACT structure:
@@ -198,8 +194,7 @@ Competitor2 | Their Strength | Their Weakness | Where You Win
 (5 competitors total)
 
 YOUR COMPETITIVE MOAT
-[What makes ${domain} hard to compete with]
-
+[What makes ${domain}'s "${selectedProduct}" hard to compete with]
 RULES:
 - NO PREAMBLE
 - Competitor names 1-3 words only
@@ -207,8 +202,7 @@ RULES:
 
   const getContentPrompt = () => {
     const ctx = research.icp.refined || research.icp.initial;
-    return `Search the web for "${domain}" content - blog, LinkedIn, podcasts.
-
+return `Search the web for "${domain}" "${selectedProduct}" content - blog, LinkedIn, podcasts.
 Analyze content strategy. Write TO the reader using "you/your".
 
 CRITICAL: Start with "CONTENT OVERVIEW" header - no preamble.
@@ -397,11 +391,40 @@ RULES:
   const nextStep = () => { if (currentStep < steps.length - 1) setCurrentStep(currentStep + 1); };
   const prevStep = () => { if (currentStep > 0) setCurrentStep(currentStep - 1); };
 
-  const startDiagnostic = () => {
+  const startDiagnostic = async () => {
     if (!websiteUrl) { alert("Please enter URL"); return; }
     const d = websiteUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
     setDomain(d);
+    setProductsLoading(true);
     nextStep();
+    
+    // Fetch products/offerings
+    try {
+      const result = await callClaude(`Search the web for "${d}" and identify their products, solutions, or service offerings.
+
+Return ONLY a simple numbered list of their distinct products/offerings. For example:
+1. Product Name A
+2. Product Name B
+3. Service Offering C
+
+If they only have ONE main product/solution, just return that one item.
+If it's a service company with no distinct products, list their main service categories.
+
+RULES:
+- Maximum 8 items
+- Just the product/service names, no descriptions
+- No preamble, just the numbered list`);
+      
+      // Parse the numbered list
+      const parsed = result.split('\n')
+        .map(line => line.replace(/^\d+[\.\)]\s*/, '').trim())
+        .filter(line => line.length > 0 && line.length < 100);
+      
+      setProducts(parsed.length > 0 ? parsed : [d]);
+    } catch (e) {
+      setProducts([d]);
+    }
+    setProductsLoading(false);
   };
 
   const saveBasicAndNext = async () => {
@@ -537,6 +560,44 @@ Rules:
       <p className="mt-6 text-sm text-white/40">5-7 minutes • AI research • PDF report</p>
     </div>
   );
+  const renderSelectProduct = () => {
+    if (productsLoading) {
+      return (
+        <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11">
+          <div className="text-center py-12">
+            <div className="w-12 h-12 border-4 border-white/10 border-t-rose-500 rounded-full animate-spin mx-auto mb-5" />
+            <h3 className="font-semibold text-xl mb-2">Analyzing {domain}</h3>
+            <p className="text-white/60">Identifying products and offerings...</p>
+          </div>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11">
+        <h2 className="font-bold text-2xl mb-3">Select Your Focus</h2>
+        <p className="text-white/60 mb-6">Which product or offering should we analyze? This helps us give you specific, actionable insights.</p>
+        <div className="space-y-3">
+          {products.map((product, i) => (
+            <div
+              key={i}
+              onClick={() => setSelectedProduct(product)}
+              className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedProduct === product ? "border-rose-500 bg-rose-500/10" : "border-white/15 bg-white/5 hover:border-rose-500/40"}`}
+            >
+              <div className="font-semibold">{product}</div>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-3 mt-7">
+          <button onClick={prevStep} className="bg-white/5 border border-white/15 text-white py-4 px-8 rounded-lg font-medium hover:bg-white/10 transition-all">← Back</button>
+          <button 
+            onClick={() => { if (selectedProduct) nextStep(); else alert("Please select a product"); }}
+            className="flex-1 bg-gradient-to-r from-rose-500 to-rose-600 text-white py-4 px-8 rounded-lg font-semibold hover:shadow-lg hover:shadow-rose-500/30 transition-all"
+          >Continue →</button>
+        </div>
+      </div>
+    );
+  };
 
   const renderBasic = () => (
     <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm p-11">
@@ -768,6 +829,7 @@ Use the same ALL CAPS headers as the original. Write TO them using "you/your". N
         </div>
         {renderStepIndicator()}
         {step === "intro" && renderIntro()}
+        {step === "select-product" && renderSelectProduct()}
         {step === "basic" && renderBasic()}
         {step === "research-company" && renderResearch("company", "Company Analysis")}
         {step === "research-icp" && renderResearch("icp", "Ideal Customer Profile")}
