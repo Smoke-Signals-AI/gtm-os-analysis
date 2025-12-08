@@ -181,6 +181,7 @@ RULES:
   };
 
 const getCompetitivePrompt = () => `Search the web for "${domain}" "${selectedProduct}" competitors.
+
 CRITICAL: Start with "COMPETITIVE LANDSCAPE" header - no preamble.
 
 Use this EXACT structure:
@@ -191,14 +192,20 @@ COMPETITIVE LANDSCAPE
 COMPARISON TABLE
 Competitor1 | Their Strength | Their Weakness | Where You Win
 Competitor2 | Their Strength | Their Weakness | Where You Win
-(5 competitors total)
+Competitor3 | Their Strength | Their Weakness | Where You Win
+Competitor4 | Their Strength | Their Weakness | Where You Win
+Competitor5 | Their Strength | Their Weakness | Where You Win
 
 YOUR COMPETITIVE MOAT
 [What makes ${domain}'s "${selectedProduct}" hard to compete with]
+
 RULES:
 - NO PREAMBLE
 - Competitor names 1-3 words only
-- Each row has exactly 4 pipe-separated values`;
+- Each competitor row MUST be on its own line
+- Each row has exactly 4 pipe-separated values
+- Put a blank line between each section
+- CRITICAL: Each competitor must be on a SEPARATE LINE with a line break after it`;
 
   const getContentPrompt = () => {
     const ctx = research.icp.refined || research.icp.initial;
