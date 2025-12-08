@@ -359,26 +359,38 @@ RULES:
     const personas: {title: string; goal: string; jtbd: string}[] = [];
     const fullText = content.join(" ");
     
-    const personaChunks = fullText.split(/PERSONA:\s*/i).filter(chunk => chunk.trim());
+    const chunks = fullText.split(/(?=PERSONA:)/i).filter(chunk => chunk.trim() && chunk.toLowerCase().includes('persona:'));
     
-    personaChunks.forEach(chunk => {
+    chunks.forEach(chunk => {
       const persona = { title: "", goal: "", jtbd: "" };
       
-      const titleMatch = chunk.match(/^([^]*?)(?=\s*GOAL:|$)/i);
-      if (titleMatch) persona.title = titleMatch[1].trim();
+      const titleMatch = chunk.match(/PERSONA:\s*([^]*?)(?=\s*GOAL:|$)/i);
+      if (titleMatch) {
+        persona.title = titleMatch[1].trim().replace(/\s+/g, ' ');
+      }
       
       const goalMatch = chunk.match(/GOAL:\s*([^]*?)(?=\s*JTBD:|$)/i);
-      if (goalMatch) persona.goal = goalMatch[1].trim();
+      if (goalMatch) {
+        persona.goal = goalMatch[1].trim().replace(/\s+/g, ' ');
+      }
       
-      const jtbdMatch = chunk.match(/JTBD:\s*([^]*?)(?=\s*PERSONA:|$)/i);
-      if (jtbdMatch) persona.jtbd = jtbdMatch[1].trim();
+      const jtbdMatch = chunk.match(/JTBD:\s*([^]*?)$/i);
+      if (jtbdMatch) {
+        let jtbd = jtbdMatch[1].trim();
+        jtbd = jtbd.split(/PERSONA:/i)[0].trim();
+        persona.jtbd = jtbd.replace(/\s+/g, ' ');
+      }
       
       if (persona.title && persona.title.length > 2) {
         personas.push(persona);
       }
     });
     
-    return personas.length > 0 ? personas : [{ title: content.join(" ").substring(0, 50), goal: "", jtbd: "" }];
+    if (personas.length === 0) {
+      return [{ title: "Key Buyer Persona", goal: content.join(" ").substring(0, 200), jtbd: "" }];
+    }
+    
+    return personas;
   };
 
   const nextStep = () => { if (currentStep < steps.length - 1) setCurrentStep(currentStep + 1); };
