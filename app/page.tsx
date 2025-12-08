@@ -417,8 +417,8 @@ RULES:
       
       // Parse the numbered list
       const parsed = result.split('\n')
-        .map(line => line.replace(/^\d+[\.\)]\s*/, '').trim())
-        .filter(line => line.length > 0 && line.length < 100);
+.map((line: string) => line.replace(/^\d+[\.\)]\s*/, '').trim())
+.filter((line: string) => line.length > 0 && line.length < 100);
       
       setProducts(parsed.length > 0 ? parsed : [d]);
     } catch (e) {
