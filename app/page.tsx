@@ -496,7 +496,7 @@ Rules:
             name: companyName || domain,
             gtm_company_analysis: getR("company").substring(0, 65000),
             gtm_icp_summary: getR("icp").substring(0, 65000),
-            gtm_competitive: cleanCompetitiveResponse(getCompetitive()).substring(0, 65000),
+            gtm_competitive_landscape: cleanCompetitiveResponse(getCompetitive()).substring(0, 65000),
             gtm_content_grade: contentGrade,
             gtm_content_analysis: contentText.substring(0, 65000),
             gtm_narrative: cleanResponse(narrative).substring(0, 65000),
