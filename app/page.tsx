@@ -409,7 +409,7 @@ RULES:
     
     // Send contact data to HubSpot
     try {
-      await fetch("/api/hubspot", {
+      const response = await fetch("/api/hubspot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -424,6 +424,10 @@ RULES:
           }
         })
       });
+      const data = await response.json();
+      if (data.id) {
+        setContactId(data.id);
+      }
     } catch (e) {
       console.error("HubSpot contact sync error:", e);
     }
@@ -502,7 +506,8 @@ Rules:
             gtm_content_analysis: contentText.substring(0, 65000),
             gtm_narrative: cleanResponse(narrative).substring(0, 65000),
             gtm_diagnostic_date: new Date().toISOString().split('T')[0]
-          }
+          },
+          associateWith: contactId ? { type: "contacts", id: contactId } : undefined
         })
       });
     } catch (e) {
