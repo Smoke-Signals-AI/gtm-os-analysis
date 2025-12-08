@@ -391,8 +391,27 @@ RULES:
     nextStep();
   };
 
-  const saveBasicAndNext = () => {
+  const saveBasicAndNext = async () => {
     if (!email) { alert("Please enter email"); return; }
+    
+    // Send initial data to HubSpot
+    try {
+      await fetch("/api/hubspot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          properties: {
+            company: companyName,
+            jobtitle: role,
+            website: domain,
+          }
+        })
+      });
+    } catch (e) {
+      console.error("HubSpot initial sync error:", e);
+    }
+    
     nextStep();
   };
 
@@ -414,6 +433,7 @@ RULES:
   const generateReport = async () => {
     const getR = (k: string) => cleanResponse(research[k as keyof typeof research].refined || research[k as keyof typeof research].initial || "");
     const getCompetitive = () => research.competitive.refined || research.competitive.initial || "";
+    
     const narrative = await callClaude(`Write an executive narrative for ${companyName || domain}. Write TO the reader using "you/your".
 
 Context: ${getR("company").substring(0, 300)}
@@ -432,7 +452,43 @@ Rules:
 - Write TO them using "you/your"
 - Be specific, not generic
 - No markdown`);
-    setReportData({ narrative, icp: research.icp.refined || research.icp.initial || "", content: getR("content"), competitive: getCompetitive() });
+
+    const finalReportData = { 
+      narrative, 
+      icp: research.icp.refined || research.icp.initial || "", 
+      content: getR("content"), 
+      competitive: getCompetitive() 
+    };
+    
+    setReportData(finalReportData);
+    
+    // Extract content grade (letter only)
+    const contentText = getR("content");
+    const gradeMatch = contentText.match(/CONTENT GRADE:\s*([A-F])/i);
+    const contentGrade = gradeMatch ? gradeMatch[1].toUpperCase() : "";
+    
+    // Send full analysis to HubSpot
+    try {
+      await fetch("/api/hubspot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          properties: {
+            gtm_company_analysis: getR("company").substring(0, 65000),
+            gtm_icp_summary: getR("icp").substring(0, 65000),
+            gtm_competitive: cleanCompetitiveResponse(getCompetitive()).substring(0, 65000),
+            gtm_content_grade: contentGrade,
+            gtm_content_analysis: contentText.substring(0, 65000),
+            gtm_narrative: cleanResponse(narrative).substring(0, 65000),
+            gtm_diagnostic_date: new Date().toISOString().split('T')[0]
+          }
+        })
+      });
+    } catch (e) {
+      console.error("HubSpot analysis sync error:", e);
+    }
+    
     setCurrentStep(steps.indexOf("results"));
   };
 
