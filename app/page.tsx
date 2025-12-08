@@ -39,6 +39,7 @@ export default function Home() {
     content: { initial: "", feedback: "", refined: "", loading: false }
   });
   const [reportData, setReportData] = useState<{narrative: string; icp: string; content: string; competitive: string} | null>(null);
+  const [contactId, setContactId] = useState<string | null>(null);
 
   const cleanResponse = (text: string) => {
     if (!text) return "";
