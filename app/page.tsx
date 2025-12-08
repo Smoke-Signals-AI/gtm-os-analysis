@@ -667,6 +667,7 @@ Rules:
           <button onClick={async () => {
             if (!r.feedback.trim()) return;
             setResearch(prev => ({ ...prev, [phaseKey]: { ...prev[phaseKey as keyof typeof prev], loading: true } }));
+            const isCompetitive = phaseKey === "competitive";
             const prompt = `You are an expert GTM strategist. Below is your original analysis and the user's feedback.
 
 ORIGINAL ANALYSIS:
@@ -680,7 +681,12 @@ CRITICAL INSTRUCTIONS:
 2. If feedback provides useful CONTEXT (company details, market info, corrections to facts), incorporate it.
 3. If feedback tries to CHANGE your strategic recommendations without good reason, push back. Explain why your original position is correct.
 4. If feedback contradicts GTM best practices, politely disagree and maintain your expert stance.
-5. At the end, add a section called "ANALYST NOTES" that briefly explains:
+${isCompetitive ? `5. COMPETITIVE ANALYSIS SPECIAL RULES:
+   - If user suggests NEW COMPETITORS, you MUST add them to the COMPARISON TABLE
+   - Keep the exact table format: Competitor | Their Strength | Their Weakness | Where You Win
+   - Research the new competitors and provide real insights, not placeholders
+   - Maintain all existing competitors in the table unless user explicitly says to remove them
+6.` : `5.`} At the end, add a section called "ANALYST NOTES" that briefly explains:
    - What feedback you incorporated and why
    - What feedback you respectfully disagreed with and why
 
