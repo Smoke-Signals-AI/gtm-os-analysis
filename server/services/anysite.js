@@ -3,7 +3,7 @@ const cache = require('../utils/cache');
 
 function anysiteHeaders() {
   return {
-    'Authorization': `Bearer ${process.env.ANYSITE_API_KEY}`,
+    'access-token': process.env.ANYSITE_API_KEY,
     'Content-Type': 'application/json'
   };
 }
