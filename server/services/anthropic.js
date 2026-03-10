@@ -11,8 +11,8 @@ function getClient() {
 }
 
 async function generateAnalysis({ websiteResearch, domain, usesHubSpot, enrichedPerson }) {
-  const model = usesHubSpot ? 'claude-opus-4-6' : 'claude-sonnet-4-5-20250514';
-  const modelLabel = usesHubSpot ? 'opus-4.6' : 'sonnet-4.5';
+  const model = usesHubSpot ? 'claude-opus-4-6' : 'claude-sonnet-4-6';
+  const modelLabel = usesHubSpot ? 'opus-4.6' : 'sonnet-4.6';
 
   const { systemPrompt, userPrompt } = getAnalysisPrompt({
     websiteResearch,

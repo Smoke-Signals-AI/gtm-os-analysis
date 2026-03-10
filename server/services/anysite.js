@@ -1,4 +1,4 @@
-const ANYSITE_BASE = 'https://api.anysite.io';
+const ANYSITE_BASE = process.env.ANYSITE_BASE_URL || 'https://api.anysite.io';
 const cache = require('../utils/cache');
 
 function anysiteHeaders() {
@@ -30,12 +30,14 @@ async function anysiteFetch(path, options = {}) {
 
 async function enrichPersonByEmail(email) {
   try {
-    const data = await anysiteFetch('/v1/linkedin/person/search', {
+    const data = await anysiteFetch('/api/ai_based/linkedin/person/search', {
       method: 'POST',
       body: JSON.stringify({ email })
     });
-    if (!data || !data.results || data.results.length === 0) return null;
-    const person = data.results[0];
+    if (!data) return null;
+    // Handle both flat response and results array
+    const person = data.results ? data.results[0] : data;
+    if (!person) return null;
     return {
       firstName: person.first_name || person.firstName || '',
       lastName: person.last_name || person.lastName || '',
@@ -52,20 +54,20 @@ async function enrichPersonByEmail(email) {
 }
 
 async function checkBuiltWith(domain) {
-  // Check cache first
   const cached = cache.get(`builtwith:${domain}`);
   if (cached !== null) return cached;
 
   try {
-    const data = await anysiteFetch(`/v1/builtwith/lookup?domain=${encodeURIComponent(domain)}`);
-    const technologies = data.technologies || data.tech || data.results || [];
-    const techNames = Array.isArray(technologies)
-      ? technologies.map(t => (typeof t === 'string' ? t : (t.name || t.technology || '')).toLowerCase())
+    const data = await anysiteFetch('/api/ai_based/builtwith/technologies', {
+      method: 'POST',
+      body: JSON.stringify({ domain })
+    });
+
+    const techNames = Array.isArray(data.technology_name)
+      ? data.technology_name.map(t => String(t).toLowerCase())
       : [];
 
-    const usesHubSpot = techNames.some(name =>
-      name.includes('hubspot')
-    );
+    const usesHubSpot = techNames.some(name => name.includes('hubspot'));
 
     const result = { usesHubSpot, technologies: techNames };
     cache.set(`builtwith:${domain}`, result);
