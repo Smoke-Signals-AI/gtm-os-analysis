@@ -12,6 +12,9 @@
 
   <!-- ========== INPUT SCREEN ========== -->
   <section id="heroScreen" class="hero">
+    <a href="https://www.smokesignals.ai" class="hero-logo-link">
+      <img src="/images/logo-white-hz.png" alt="Smoke Signals" class="hero-logo-img">
+    </a>
     <span class="hero-badge">Signal-Based GTM Intelligence</span>
     <h1>Your GTM operating system starts here</h1>
     <p class="hero-subtitle">
@@ -34,13 +37,45 @@
     </div>
   </section>
 
-  <!-- ========== LOADING SCREEN ========== -->
+  <!-- ========== LOADING SCREEN WITH SURVEY ========== -->
   <section id="loadingScreen" class="loading-screen">
-    <div class="loading-indicator"></div>
-    <p id="loadingStatus" class="loading-status">Starting your analysis...</p>
-    <p id="loadingSubstatus" class="loading-substatus">This typically takes 60-90 seconds</p>
-    <div class="loading-progress">
-      <div id="loadingBar" class="loading-progress-bar"></div>
+    <div class="loading-top">
+      <div class="loading-indicator"></div>
+      <p id="loadingStatus" class="loading-status">Starting your analysis...</p>
+      <p id="loadingSubstatus" class="loading-substatus">This typically takes 60-90 seconds</p>
+      <div class="loading-progress">
+        <div id="loadingBar" class="loading-progress-bar"></div>
+      </div>
+    </div>
+
+    <div id="surveySection" class="survey-section">
+      <p class="survey-intro">While we build your report, help us tailor your strategy</p>
+
+      <div class="survey-card" id="surveyCard1">
+        <p class="survey-question">What tools have you tried for GTM?</p>
+        <p class="survey-hint">Select all that apply</p>
+        <div class="chip-group" id="toolsGroup">
+          <label class="chip"><input type="checkbox" name="tools" value="AI SDRs"><span>AI SDRs</span></label>
+          <label class="chip"><input type="checkbox" name="tools" value="Clay"><span>Clay</span></label>
+          <label class="chip"><input type="checkbox" name="tools" value="Claude"><span>Claude</span></label>
+          <label class="chip"><input type="checkbox" name="tools" value="ChatGPT"><span>ChatGPT</span></label>
+          <label class="chip"><input type="checkbox" name="tools" value="Gemini"><span>Gemini</span></label>
+          <label class="chip"><input type="checkbox" name="tools" value="Perplexity"><span>Perplexity</span></label>
+        </div>
+      </div>
+
+      <div class="survey-card" id="surveyCard2">
+        <p class="survey-question">Who owns demand capture at your company?</p>
+        <p class="survey-hint">Select all that apply</p>
+        <div class="chip-group" id="captureGroup">
+          <label class="chip"><input type="checkbox" name="capture" value="AEs"><span>AEs</span></label>
+          <label class="chip"><input type="checkbox" name="capture" value="SDRs"><span>SDRs</span></label>
+          <label class="chip"><input type="checkbox" name="capture" value="Marketing"><span>Marketing</span></label>
+        </div>
+      </div>
+
+      <button id="surveySubmitBtn" class="btn-survey" disabled>Submit Answers</button>
+      <p id="surveyThanks" class="survey-thanks" style="display:none">Thanks. We will factor this into your report.</p>
     </div>
   </section>
 
@@ -53,94 +88,119 @@
 
   <!-- ========== RESULTS SCREEN ========== -->
   <section id="resultsScreen" class="results-screen">
-    <div class="container">
 
-      <!-- Intro -->
-      <div class="results-intro">
-        <p class="label">GTM Intelligence Report</p>
-        <h2 id="resultsDomain"></h2>
-        <p>Alpha signals are the backbone of modern GTM. They are proprietary indicators of buying intent, detectable before competitors notice them, and deployable across every channel: outbound, content, LinkedIn, and sales enablement. Smoke Signals detects buying intent before competitors see it and deploys it across every channel. Below is a sample of what that looks like for your company.</p>
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <a href="https://www.smokesignals.ai" class="sidebar-logo">
+        <img src="/images/logo-white-hz.png" alt="Smoke Signals">
+      </a>
+
+      <nav class="sidebar-nav" id="sidebarNav">
+        <a href="#overview" class="nav-item active" data-target="overview">Overview</a>
+        <a href="#section-icp" class="nav-item" data-target="section-icp"><span class="nav-num">01</span>ICP Profile</a>
+        <a href="#section-usp" class="nav-item" data-target="section-usp"><span class="nav-num">02</span>USP Analysis</a>
+        <a href="#section-signal" class="nav-item" data-target="section-signal"><span class="nav-num">03</span>Alpha Signal</a>
+        <a href="#section-sequence" class="nav-item" data-target="section-sequence"><span class="nav-num">04</span>Sequence</a>
+        <a href="#section-content" class="nav-item" data-target="section-content"><span class="nav-num">05</span>Content Plan</a>
+      </nav>
+
+      <div class="sidebar-actions">
+        <button id="downloadPdfBtn" class="btn-sidebar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download PDF
+        </button>
+        <a href="#cta-section" class="btn-sidebar btn-sidebar-accent">Book a Call</a>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+      <!-- Overview / Hero -->
+      <div id="overview" class="rpt-section rpt-overview">
+        <div class="overview-header">
+          <div class="overview-brand">
+            <img id="companyLogo" class="company-logo" alt="" onerror="this.style.display='none'">
+            <div>
+              <p class="label">GTM Intelligence Report</p>
+              <h1 id="resultsDomain" class="overview-title"></h1>
+            </div>
+          </div>
+        </div>
+        <p class="overview-intro">Alpha signals are proprietary indicators of buying intent, detectable before competitors see them. Below is a sample of what a Smoke Signals GTM operating system looks like for your company.</p>
       </div>
 
-      <!-- Section 1: ICP Profile -->
-      <div class="report-section" id="section1">
-        <div class="section-header">
+      <!-- Section 1: ICP -->
+      <div id="section-icp" class="rpt-section">
+        <div class="section-label">
           <span class="section-num">01</span>
           <span class="section-rule"></span>
-          <span class="section-title">ICP Profile</span>
+          <span class="section-tag">ICP Profile</span>
         </div>
         <div class="section-body" id="section1Body"></div>
       </div>
 
-      <!-- Section 2: USP Analysis -->
-      <div class="report-section" id="section2">
-        <div class="section-header">
+      <!-- Section 2: USP -->
+      <div id="section-usp" class="rpt-section">
+        <div class="section-label">
           <span class="section-num">02</span>
           <span class="section-rule"></span>
-          <span class="section-title">Unique Selling Proposition Analysis</span>
+          <span class="section-tag">USP Analysis</span>
         </div>
         <div class="section-body" id="section2Body"></div>
       </div>
 
-      <!-- Section 3: Alpha Signal -->
-      <div class="report-section" id="section3">
-        <div class="section-header">
+      <!-- Section 3: Alpha Signal + Micro-App -->
+      <div id="section-signal" class="rpt-section">
+        <div class="section-label">
           <span class="section-num">03</span>
           <span class="section-rule"></span>
-          <span class="section-title">Custom Alpha Signal + App Concept</span>
+          <span class="section-tag">Alpha Signal</span>
         </div>
         <div class="section-body" id="section3Body"></div>
+        <!-- Interactive Micro-App rendered here by JS -->
+        <div id="microAppContainer" class="micro-app-container"></div>
       </div>
 
       <!-- Section 4: Outbound Sequence -->
-      <div class="report-section" id="section4">
-        <div class="section-header">
+      <div id="section-sequence" class="rpt-section">
+        <div class="section-label">
           <span class="section-num">04</span>
           <span class="section-rule"></span>
-          <span class="section-title">Outbound Sequence Concept</span>
+          <span class="section-tag">Outbound Sequence</span>
         </div>
-        <div class="section-body" id="section4Body"></div>
+        <!-- Sequence timeline rendered here by JS -->
+        <div id="sequenceTimeline" class="sequence-timeline"></div>
       </div>
 
       <!-- Section 5: Content + LinkedIn -->
-      <div class="report-section" id="section5">
-        <div class="section-header">
+      <div id="section-content" class="rpt-section">
+        <div class="section-label">
           <span class="section-num">05</span>
           <span class="section-rule"></span>
-          <span class="section-title">Content + LinkedIn Plan</span>
+          <span class="section-tag">Content + LinkedIn</span>
         </div>
         <div class="section-body" id="section5Body"></div>
       </div>
-    </div>
 
-    <!-- PDF Download -->
-    <div class="download-section">
-      <button id="downloadPdfBtn" class="btn-download">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="7 10 12 15 17 10"/>
-          <line x1="12" y1="15" x2="12" y2="3"/>
-        </svg>
-        Download Full Report (PDF)
-      </button>
-    </div>
-
-    <!-- CTA / Calendar -->
-    <div class="cta-section">
-      <div class="container">
-        <p class="label" style="color: rgba(255,255,255,0.5); margin-bottom: 16px;">Next Step</p>
-        <h2>This is a sample of what we build</h2>
-        <p>Want to see the full signal menu for your company? Let's talk.</p>
-        <div class="calendar-embed">
-          <iframe src="https://smokesignals.ai/meetings/nick-zeckets/discovery" title="Book a Discovery Call"></iframe>
+      <!-- CTA -->
+      <div id="cta-section" class="rpt-section rpt-cta">
+        <div class="cta-inner">
+          <p class="label" style="color: rgba(255,255,255,0.45)">Next Step</p>
+          <h2>This is a sample of what we build</h2>
+          <p>Want to see the full signal menu for your company? Let's talk.</p>
+          <div class="calendar-embed">
+            <iframe src="https://smokesignals.ai/meetings/nick-zeckets/discovery" title="Book a Discovery Call"></iframe>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Footer -->
-    <footer class="site-footer">
-      <p>Prepared by <a href="https://smokesignals.ai">Smoke Signals AI</a> &bull; <a href="mailto:nick@smokesignals.ai">nick@smokesignals.ai</a></p>
-    </footer>
+      <!-- Footer -->
+      <footer class="rpt-footer">
+        <p>Prepared by <a href="https://www.smokesignals.ai">Smoke Signals AI</a> &bull; <a href="mailto:nick@smokesignals.ai">nick@smokesignals.ai</a></p>
+      </footer>
+
+    </main>
   </section>
 
   <script src="/js/app.js"></script>

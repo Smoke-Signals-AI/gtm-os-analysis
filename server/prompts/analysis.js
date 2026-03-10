@@ -15,7 +15,8 @@ Writing rules (these are non-negotiable):
 - The alpha signal you design must be genuinely novel. Not a repackaged version of "they're hiring" or "they raised funding"
 - Email copy must follow signal-first architecture: signal hook, bridge to relevance, value without pitching, grateful CTA
 - LinkedIn content should be written for organic reach: hook-first, no hashtag spam, educational tone
-- Keep language clean and sharp. Short paragraphs. No walls of text.`;
+- Keep language clean and sharp. Short paragraphs. No walls of text.
+- Be CONCISE. Sections 1 and 2 should be punchy insight cards, not essays.`;
 
   const userPrompt = `Analyze the following company and produce a comprehensive GTM intelligence report with exactly FIVE sections.
 
@@ -25,65 +26,139 @@ ${personContext}
 Website research:
 ${websiteResearch}
 
-Produce these five sections. Use the exact section headers shown below.
+Produce these five sections. Use the exact section headers shown below. Follow the formatting instructions precisely.
 
 ## Section 1: ICP Profile
 
-Analyze:
-- Who is their ideal customer (industry, company size, title of buyer, use case)
-- What job-to-be-done does their product address
-- What is the buying trigger: what event or change causes someone to look for this solution
-- What is the signal blind spot: what buying signals exist that they are probably not detecting
+Write SHORT, punchy insight cards. No paragraphs of explanation. Format EXACTLY like this:
+
+### Target Buyer
+- **Industry:** [specific industry/vertical]
+- **Company size:** [employee range or revenue range]
+- **Buyer title:** [specific titles that sign or champion the deal]
+- **Use case:** [one sentence describing the job-to-be-done]
+
+### Buying Trigger
+[2 sentences MAX. What specific event or change causes someone to look for this solution right now?]
+
+### Signal Blind Spot
+[2 sentences MAX. What buying signal exists that this company is probably not detecting today?]
 
 ## Section 2: Unique Selling Proposition Analysis
 
-Analyze:
-- What is their core USP to the identified ICP
-- How differentiated is it (scale of 1-5 with explanation)
-- Where the positioning is strong vs. where it is generic
-- One recommended positioning tweak that would sharpen their story
+Write SHORT, punchy analysis. No essays. Format EXACTLY like this:
+
+> [One powerful sentence that captures their core USP to the ICP above]
+
+### Differentiation: X/5
+[One sentence explaining the score]
+
+### Where the positioning lands
+- **Strong:** [one specific thing they do well in their messaging]
+- **Generic:** [one specific thing that sounds like every competitor]
+
+### Recommended tweak
+[1-2 sentences with a specific, actionable positioning recommendation]
 
 ## Section 3: Custom Alpha Signal + Interactive App Concept
 
-Design ONE highly original, creative alpha signal specific to this company. An alpha signal is a proprietary indicator of buying intent that competitors are not watching. It must be:
+Design ONE highly original alpha signal specific to this company. An alpha signal is a proprietary indicator of buying intent that competitors are not watching. It must be:
 - Specific to their ICP and industry
 - Detectable through publicly available data (LinkedIn, job postings, tech stack changes, SEC filings, review sites, social media, etc.)
 - Actionable: a sales team could act on it within 24 hours of detection
 
-Then describe an interactive micro-app concept that demonstrates the signal in action. Describe: what it does, what the visitor inputs, what it produces, and how it proves the signal thesis. Think along the lines of ROI calculators, readiness assessments, benchmarking tools, or risk scorecards, but designed specifically for this company's signal.
+Describe the signal with these subsections:
+### The Signal
+[Name and describe the alpha signal in 2-3 sentences]
+
+### Why It Works
+[2-3 sentences on why this signal indicates buying intent]
+
+### How to Detect It
+[2-3 bullet points on the data sources and detection method]
+
+Then design an interactive micro-app that demonstrates the signal. Output the micro-app specification as a JSON code block using this EXACT format:
+
+\`\`\`microapp
+{
+  "title": "Name of the Assessment/Calculator/Scorecard",
+  "tagline": "One line describing what the user gets in 90 seconds",
+  "inputs": [
+    {"id": "field1", "label": "Display Label", "type": "text", "placeholder": "e.g., example value"},
+    {"id": "field2", "label": "Category", "type": "select", "options": ["Option A", "Option B", "Option C", "Option D"]},
+    {"id": "field3", "label": "Scale Metric", "type": "range", "min": 0, "max": 100, "step": 5, "unit": "units"},
+    {"id": "field4", "label": "Yes/No Question", "type": "yesno"}
+  ],
+  "resultTitle": "Your Score/Assessment Title",
+  "resultMetrics": [
+    {"label": "Metric Name 1", "description": "What this dimension measures"},
+    {"label": "Metric Name 2", "description": "What this dimension measures"},
+    {"label": "Metric Name 3", "description": "What this dimension measures"}
+  ],
+  "benchmark": "Companies in your vertical with similar profiles average a score of {score}/100. Here is where you stand."
+}
+\`\`\`
+
+Design 3-5 inputs that are specific to this company's ICP and signal. Use a mix of input types (at least one text, one select, and one range or yesno). The metrics should align with the alpha signal theme.
 
 ## Section 4: Outbound Sequence Concept
 
 Design a 3-email outbound sequence triggered by the alpha signal from Section 3.
 
-For each email provide:
-- Subject line (lowercase, 3-6 words, no punctuation except question marks)
-- Email body
+Format each email EXACTLY like this (this format is critical for rendering):
 
-Email structure (each email):
-1. Signal hook (1-2 sentences): reference the alpha signal specifically
-2. Bridge to relevance (1-2 sentences): connect signal to a problem using hedging language ("Not sure how you're thinking about...", "Depending on how you're handling...")
-3. Value without pitching (1-2 sentences): results, proof, or insight. No product description.
-4. Grateful CTA (1 sentence): "I'd be grateful for 15 minutes" energy
+### Email 1: Signal Detection
+**Subject:** [lowercase, 3-6 words, no punctuation except question marks]
+
+[Email body: 50-90 words following signal-first architecture]
+- Signal hook (1-2 sentences): reference the alpha signal
+- Bridge (1-2 sentences): connect to problem with hedging language
+- Value (1-2 sentences): results or insight, no product pitch
+- CTA (1 sentence): "grateful for 15 minutes" energy
+
+### Email 2: Value Add
+**Subject:** [lowercase, 3-6 words]
+
+[Email body: 50-90 words, adds new value, not "just bumping this"]
+
+### Email 3: Proof + Close
+**Subject:** [lowercase, 3-6 words]
+
+[Email body: 50-90 words, includes proof point or case reference]
 
 Rules:
-- 50-90 words per email body
 - No self-introduction as opening line
 - No buzzwords or jargon
-- Each follow-up adds new value, not "just bumping this"
 - Sound like a human texting a professional acquaintance
 
 ## Section 5: Content + LinkedIn Plan
 
-Part A: One long-form content idea (blog post, guide, or report) that positions their expertise around the alpha signal theme. Include: title, target audience, key sections, estimated length, distribution strategy.
+### Long-form Content Idea
+- **Title:** [specific, compelling title]
+- **Target audience:** [who this is for]
+- **Format:** [blog post / guide / report]
+- **Key sections:** [3-4 bullet points]
+- **Distribution:** [1-2 sentences on how to distribute]
 
-Part B: A 4-post LinkedIn content plan for the company's founder or head of marketing. Each post should follow a different format:
-1. One contrarian take
-2. One data/proof post
-3. One story/narrative post
-4. One educational breakdown
+### LinkedIn Content Plan
 
-Include the opening hook line for each post. No hashtags.`;
+**Post 1 (Contrarian Take)**
+Hook: "[opening line that stops the scroll]"
+[3-4 sentence summary of the post]
+
+**Post 2 (Data/Proof)**
+Hook: "[opening line]"
+[3-4 sentence summary]
+
+**Post 3 (Story/Narrative)**
+Hook: "[opening line]"
+[3-4 sentence summary]
+
+**Post 4 (Educational Breakdown)**
+Hook: "[opening line]"
+[3-4 sentence summary]
+
+No hashtags. Write for organic reach.`;
 
   return { systemPrompt, userPrompt };
 }

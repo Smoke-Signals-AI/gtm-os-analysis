@@ -89,7 +89,9 @@ const GTMOS_PROPERTIES = [
   { name: 'gtmos_crm', label: 'CRM', type: 'string', fieldType: 'text' },
   { name: 'gtmos_company_research', label: 'Company Research', type: 'string', fieldType: 'textarea' },
   { name: 'gtmos_completed_at', label: 'Completed At', type: 'date', fieldType: 'date' },
-  { name: 'gtmos_model_used', label: 'Model Used', type: 'string', fieldType: 'text' }
+  { name: 'gtmos_model_used', label: 'Model Used', type: 'string', fieldType: 'text' },
+  { name: 'gtmos_tools_tried', label: 'GTM Tools Tried', type: 'string', fieldType: 'text' },
+  { name: 'gtmos_demand_capture_owner', label: 'Demand Capture Owner', type: 'string', fieldType: 'text' }
 ];
 
 async function ensureProperties() {
