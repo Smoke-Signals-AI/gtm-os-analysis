@@ -1,26 +1,18 @@
 {
-  "name": "nextjs",
-  "version": "0.1.0",
-  "private": true,
+  "name": "gtm-os-analysis",
+  "version": "2.0.0",
+  "description": "GTM OS Analysis App by Smoke Signals AI",
+  "main": "server/index.js",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
   },
   "dependencies": {
-    "next": "16.0.7",
-    "react": "19.2.1",
-    "react-dom": "19.2.1"
+    "@anthropic-ai/sdk": "^0.39.0",
+    "express": "^4.21.0",
+    "uuid": "^10.0.0"
   },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.0.7",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
