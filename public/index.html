@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GTM OS — Smoke Signals AI</title>
+  <meta name="description" content="Get a custom GTM intelligence report powered by alpha signals. Enter your email and website to receive a comprehensive analysis.">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23E85D50'/></svg>">
+</head>
+<body>
+
+  <!-- ========== INPUT SCREEN ========== -->
+  <section id="heroScreen" class="hero">
+    <span class="hero-badge">Signal-Based GTM Intelligence</span>
+    <h1>Your GTM operating system starts here</h1>
+    <p class="hero-subtitle">
+      Enter your email and company website. In under two minutes, you will receive a custom GTM intelligence report built on alpha signals your competitors are not watching.
+    </p>
+
+    <div class="form-card">
+      <form id="analysisForm" novalidate>
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" name="email" placeholder="you@company.com" required autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label for="website">Company Website</label>
+          <input type="url" id="website" name="website" placeholder="https://yourcompany.com" required autocomplete="url">
+        </div>
+        <button type="submit" id="submitBtn" class="btn-primary">Generate Your Analysis</button>
+        <p id="formError" class="form-error"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ========== LOADING SCREEN ========== -->
+  <section id="loadingScreen" class="loading-screen">
+    <div class="loading-indicator"></div>
+    <p id="loadingStatus" class="loading-status">Starting your analysis...</p>
+    <p id="loadingSubstatus" class="loading-substatus">This typically takes 60-90 seconds</p>
+    <div class="loading-progress">
+      <div id="loadingBar" class="loading-progress-bar"></div>
+    </div>
+  </section>
+
+  <!-- ========== ERROR SCREEN ========== -->
+  <section id="errorScreen" class="error-screen">
+    <h2>Something went wrong</h2>
+    <p id="errorMessage">We were unable to complete your analysis. Please try again.</p>
+    <button id="retryBtn" class="btn-secondary">Try Again</button>
+  </section>
+
+  <!-- ========== RESULTS SCREEN ========== -->
+  <section id="resultsScreen" class="results-screen">
+    <div class="container">
+
+      <!-- Intro -->
+      <div class="results-intro">
+        <p class="label">GTM Intelligence Report</p>
+        <h2 id="resultsDomain"></h2>
+        <p>Alpha signals are the backbone of modern GTM. They are proprietary indicators of buying intent, detectable before competitors notice them, and deployable across every channel: outbound, content, LinkedIn, and sales enablement. Smoke Signals detects buying intent before competitors see it and deploys it across every channel. Below is a sample of what that looks like for your company.</p>
+      </div>
+
+      <!-- Section 1: ICP Profile -->
+      <div class="report-section" id="section1">
+        <div class="section-header">
+          <span class="section-num">01</span>
+          <span class="section-rule"></span>
+          <span class="section-title">ICP Profile</span>
+        </div>
+        <div class="section-body" id="section1Body"></div>
+      </div>
+
+      <!-- Section 2: USP Analysis -->
+      <div class="report-section" id="section2">
+        <div class="section-header">
+          <span class="section-num">02</span>
+          <span class="section-rule"></span>
+          <span class="section-title">Unique Selling Proposition Analysis</span>
+        </div>
+        <div class="section-body" id="section2Body"></div>
+      </div>
+
+      <!-- Section 3: Alpha Signal -->
+      <div class="report-section" id="section3">
+        <div class="section-header">
+          <span class="section-num">03</span>
+          <span class="section-rule"></span>
+          <span class="section-title">Custom Alpha Signal + App Concept</span>
+        </div>
+        <div class="section-body" id="section3Body"></div>
+      </div>
+
+      <!-- Section 4: Outbound Sequence -->
+      <div class="report-section" id="section4">
+        <div class="section-header">
+          <span class="section-num">04</span>
+          <span class="section-rule"></span>
+          <span class="section-title">Outbound Sequence Concept</span>
+        </div>
+        <div class="section-body" id="section4Body"></div>
+      </div>
+
+      <!-- Section 5: Content + LinkedIn -->
+      <div class="report-section" id="section5">
+        <div class="section-header">
+          <span class="section-num">05</span>
+          <span class="section-rule"></span>
+          <span class="section-title">Content + LinkedIn Plan</span>
+        </div>
+        <div class="section-body" id="section5Body"></div>
+      </div>
+    </div>
+
+    <!-- PDF Download -->
+    <div class="download-section">
+      <button id="downloadPdfBtn" class="btn-download">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download Full Report (PDF)
+      </button>
+    </div>
+
+    <!-- CTA / Calendar -->
+    <div class="cta-section">
+      <div class="container">
+        <p class="label" style="color: rgba(255,255,255,0.5); margin-bottom: 16px;">Next Step</p>
+        <h2>This is a sample of what we build</h2>
+        <p>Want to see the full signal menu for your company? Let's talk.</p>
+        <div class="calendar-embed">
+          <iframe src="https://smokesignals.ai/meetings/nick-zeckets/discovery" title="Book a Discovery Call"></iframe>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+      <p>Prepared by <a href="https://smokesignals.ai">Smoke Signals AI</a> &bull; <a href="mailto:nick@smokesignals.ai">nick@smokesignals.ai</a></p>
+    </footer>
+  </section>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
