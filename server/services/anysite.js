@@ -10,7 +10,7 @@ function anysiteHeaders() {
 
 async function anysiteFetch(path, options = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const reqTimeout = setTimeout(() => controller.abort(), 30000);
   try {
     const res = await fetch(`${ANYSITE_BASE}${path}`, {
       ...options,
@@ -18,13 +18,15 @@ async function anysiteFetch(path, options = {}) {
       signal: controller.signal
     });
     if (!res.ok) {
-      const err = new Error(`Anysite API error: ${res.status}`);
+      let body;
+      try { body = await res.text(); } catch {}
+      const err = new Error(`Anysite API error: ${res.status}${body ? ' - ' + body : ''}`);
       err.status = res.status;
       throw err;
     }
     return res.json();
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(reqTimeout);
   }
 }
 
@@ -60,7 +62,7 @@ async function checkBuiltWith(domain) {
   try {
     const data = await anysiteFetch('/api/ai_based/builtwith/technologies', {
       method: 'POST',
-      body: JSON.stringify({ domain })
+      body: JSON.stringify({ domain, timeout: 300 })
     });
 
     const techNames = Array.isArray(data.technology_name)

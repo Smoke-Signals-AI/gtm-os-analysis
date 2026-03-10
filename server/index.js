@@ -36,12 +36,14 @@ app.get('/health', (req, res) => {
 // API routes
 const analyzeRouter = require('./routes/analyze');
 const pdfRouter = require('./routes/pdf');
+const surveyRouter = require('./routes/survey');
 
 // Wire up the analysis store to the PDF router
 pdfRouter.setAnalysisStore(analyzeRouter.getAnalysis);
 
 app.use('/api', analyzeRouter);
 app.use('/api', pdfRouter);
+app.use('/api', surveyRouter);
 
 // Serve index.html for all other routes
 app.get('*', (req, res) => {
