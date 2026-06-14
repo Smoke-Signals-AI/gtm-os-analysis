@@ -861,26 +861,31 @@
 
     if (!chatStarted) {
       chatStarted = true;
-      chatLauncher.addEventListener('click', toggleChat);
-      chatClose.addEventListener('click', toggleChat);
+      chatLauncher.addEventListener('click', function () { openChat(true); });
+      chatClose.addEventListener('click', closeChat);
       chatForm.addEventListener('submit', onChatSubmit);
 
       const name = currentPerson && currentPerson.firstName ? currentPerson.firstName : '';
       addChatMessage('assistant', (name ? name + ', ' : '') + 'this report is a sample of what we build. Ask me anything about your alpha signal, the sequence, or how a signal-based program would run for you.');
+
+      // Open by default on desktop (offer help up front); mobile shows just the launcher.
+      if (window.innerWidth > 768) openChat(false);
     }
   }
 
-  function toggleChat() {
-    const opening = chatPanel.hidden;
-    chatPanel.hidden = !opening;
-    chatWidget.classList.toggle('open', opening);
-    if (opening) {
-      chatWidget.classList.remove('has-unread');
-      chatInput.focus();
-      startChatPolling();
-    } else {
-      stopChatPolling();
-    }
+  function openChat(focus) {
+    chatWidget.classList.add('open');
+    chatPanel.hidden = false;
+    chatWidget.classList.remove('has-unread');
+    if (focus !== false) chatInput.focus();
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    startChatPolling();
+  }
+
+  function closeChat() {
+    chatWidget.classList.remove('open');
+    chatPanel.hidden = true;
+    stopChatPolling();
   }
 
   function onChatSubmit(e) {
@@ -965,5 +970,16 @@
       })
       .catch(function () {});
   }
+
+  // ---------- Deep link: /?report=<id> opens a specific stored report ----------
+  (function loadSharedReport() {
+    var params = new URLSearchParams(window.location.search);
+    var reportId = params.get('report');
+    if (!reportId) return;
+    fetch('/api/analysis/' + encodeURIComponent(reportId))
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (data) { renderResults(data); })
+      .catch(function () { /* report missing or expired: leave the hero screen up */ });
+  })();
 
 })();

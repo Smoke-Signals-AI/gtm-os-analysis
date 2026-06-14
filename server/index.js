@@ -4,6 +4,9 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Behind Railway's TLS proxy: trust X-Forwarded-* so req.protocol is https.
+app.set('trust proxy', true);
+
 // Middleware. Capture the raw body so we can verify Slack request signatures.
 app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf.toString('utf8'); }
