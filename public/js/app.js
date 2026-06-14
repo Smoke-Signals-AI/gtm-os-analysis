@@ -145,7 +145,6 @@
     if (!streamingStarted) {
       streamingStarted = true;
       if (streamPanel) streamPanel.hidden = false;
-      if (surveySection) surveySection.classList.add('dimmed');
       setPhase('capture');
     }
     accumulatedText += text;
@@ -257,7 +256,6 @@
     streamingStarted = false;
     if (streamPanel) streamPanel.hidden = true;
     if (streamTranscript) streamTranscript.innerHTML = '';
-    if (surveySection) surveySection.classList.remove('dimmed');
     setPhase('creation');
     if (signalPrinciple) signalPrinciple.textContent = MANIFESTO_LINES[0];
     startPrincipleRotation();

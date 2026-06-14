@@ -73,12 +73,6 @@
       </div>
     </div>
 
-    <!-- The report streams in here once generation begins -->
-    <div id="streamPanel" class="stream-panel" hidden>
-      <div class="stream-panel-head"><span class="stream-dot"></span> Your report is forming, live</div>
-      <div id="streamTranscript" class="stream-transcript" aria-live="polite"></div>
-    </div>
-
     <div id="surveySection" class="survey-section">
       <p class="survey-intro">While we read your signals, help us tailor your strategy</p>
 
@@ -107,6 +101,12 @@
 
       <button id="surveySubmitBtn" class="btn-survey" disabled>Submit Answers</button>
       <p id="surveyThanks" class="survey-thanks" style="display:none">Thanks. We will factor this into your report.</p>
+    </div>
+
+    <!-- The report streams in here once generation begins, below the survey so it never pushes the survey out of reach -->
+    <div id="streamPanel" class="stream-panel" hidden>
+      <div class="stream-panel-head"><span class="stream-dot"></span> Your report is forming, live</div>
+      <div id="streamTranscript" class="stream-transcript" aria-live="polite"></div>
     </div>
   </section>
 
