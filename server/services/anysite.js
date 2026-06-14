@@ -30,110 +30,112 @@ async function anysiteFetch(path, options = {}) {
   }
 }
 
+// LinkedIn URN values come back as either a string ("fsd_profile:ACoAAA...") or
+// an object. Normalize to the string form the API expects on input.
+function urnString(v) {
+  if (!v) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object') {
+    if (v.urn) return urnString(v.urn);
+    if (v.type && (v.id || v.value)) return v.type + ':' + (v.id || v.value);
+    return v.value || v.id || v.fsd_profile || v.entity_urn || '';
+  }
+  return String(v);
+}
+
+function firstExperience(p) {
+  const exp = p && (p.experience || p.experiences || p.positions);
+  if (Array.isArray(exp) && exp.length) return exp[0];
+  return null;
+}
+
+// Email -> LinkedIn profile. POST /api/linkedin/email/user { email }.
+// Returns the bits we need, including the fsd_profile URN required for posts.
 async function enrichPersonByEmail(email) {
   try {
-    const data = await anysiteFetch('/api/ai_based/linkedin/person/search', {
+    const data = await anysiteFetch('/api/linkedin/email/user', {
       method: 'POST',
-      body: JSON.stringify({ email })
+      body: JSON.stringify({ email, timeout: 300 })
     });
-    if (!data) return null;
-    // Handle both flat response and results array
-    const person = data.results ? data.results[0] : data;
-    if (!person) return null;
-    return {
-      firstName: person.first_name || person.firstName || '',
-      lastName: person.last_name || person.lastName || '',
-      title: person.title || person.headline || '',
-      company: person.company || person.company_name || '',
-      linkedinUrl: person.linkedin_url || person.profile_url || '',
-      location: person.location || '',
-      headline: person.headline || ''
+
+    const p = Array.isArray(data) ? data[0] : (data && (data.data || data.user || data)) || null;
+    if (!p) return null;
+
+    const exp = firstExperience(p);
+    const company = (exp && (exp.company || exp.company_name || exp.name)) || p.company || '';
+    const companyUrn = urnString(exp && (exp.company_urn || exp.companyUrn || exp.urn)) || '';
+
+    const result = {
+      firstName: p.first_name || p.firstName || '',
+      lastName: p.last_name || p.lastName || '',
+      title: (exp && (exp.title || exp.role)) || p.headline || '',
+      company,
+      companyUrn,
+      profileUrn: urnString(p.urn || p.internal_id || p.profile_urn || p.entity_urn),
+      linkedinUrl: p.url || p.profile_url || '',
+      alias: p.alias || '',
+      headline: p.headline || ''
     };
+
+    console.log('[gtmos] enrichPersonByEmail:', {
+      hasProfileUrn: !!result.profileUrn,
+      firstName: result.firstName,
+      company: result.company,
+      hasCompanyUrn: !!result.companyUrn,
+      responseKeys: p && typeof p === 'object' ? Object.keys(p).slice(0, 25) : null
+    });
+
+    return result;
   } catch (err) {
-    console.warn('Anysite person enrichment failed:', err.message);
+    console.warn('[gtmos] enrichPersonByEmail failed:', err.message);
     return null;
   }
 }
 
-// Extract the LinkedIn username/slug from a profile URL.
-// https://www.linkedin.com/in/jane-doe-123 -> "jane-doe-123"
-function linkedinUsernameFromUrl(url) {
-  if (!url) return null;
-  const m = String(url).match(/linkedin\.com\/in\/([^/?#]+)/i);
-  return m ? decodeURIComponent(m[1]) : null;
-}
+// Recent posts for a profile. POST /api/linkedin/user/posts { urn, count }.
+// `urn` MUST be the fsd_profile URN (from enrichPersonByEmail).
+async function getLinkedInPosts(profileUrn, count = 20) {
+  const urn = urnString(profileUrn);
+  if (!urn) { console.log('[gtmos] getLinkedInPosts: no profile URN, skipping'); return []; }
 
-// Fetch a person's recent LinkedIn posts. Best-effort: returns [] on any failure
-// so the analysis proceeds without it. `identifier` is the LinkedIn username/slug
-// (or a full profile URL, from which we extract the slug).
-async function getLinkedInPosts(identifier, count = 20) {
-  const user = linkedinUsernameFromUrl(identifier) || identifier;
-  if (!user) return [];
-
-  const cacheKey = `liposts:${user}`;
+  const cacheKey = `liposts:${urn}`;
   const cached = cache.get(cacheKey);
   if (cached !== null) return cached;
 
   try {
     const data = await anysiteFetch('/api/linkedin/user/posts', {
       method: 'POST',
-      body: JSON.stringify({ user, count })
+      body: JSON.stringify({ urn, count })
     });
 
-    const raw = Array.isArray(data) ? data
-      : (data.posts || data.results || data.data || []);
-
+    const raw = Array.isArray(data) ? data : (data.posts || data.results || data.data || []);
     const posts = (Array.isArray(raw) ? raw : []).map((p) => ({
-      text: p.text || p.commentary || p.content || p.title || '',
-      date: p.posted_at || p.date || p.published || p.created_at || '',
-      url: p.url || p.post_url || p.share_url || ''
+      text: p.text || p.commentary || p.content || '',
+      date: tsToDate(p.created_at || p.posted_at || p.date),
+      url: p.url || p.share_url || ''
     })).filter(p => p.text);
 
+    console.log('[gtmos] getLinkedInPosts:', { urn: urn.slice(0, 24), got: Array.isArray(raw) ? raw.length : 0, withText: posts.length });
     cache.set(cacheKey, posts);
     return posts;
   } catch (err) {
-    console.warn('Anysite posts lookup failed:', err.message);
+    console.warn('[gtmos] getLinkedInPosts failed:', err.message);
     cache.set(cacheKey, []);
     return [];
   }
 }
 
-// Search a company's open LinkedIn job postings. Best-effort: returns [] on
-// failure. `company` is a company name (we fall back to the domain root).
-async function getCompanyJobs(company, count = 15) {
-  if (!company) return [];
-
-  const cacheKey = `jobs:${String(company).toLowerCase()}`;
-  const cached = cache.get(cacheKey);
-  if (cached !== null) return cached;
-
-  try {
-    const data = await anysiteFetch('/api/linkedin/search/jobs', {
-      method: 'POST',
-      body: JSON.stringify({ company, count })
-    });
-
-    const raw = Array.isArray(data) ? data
-      : (data.jobs || data.results || data.data || []);
-
-    const jobs = (Array.isArray(raw) ? raw : []).map((j) => ({
-      title: j.title || j.job_title || j.name || '',
-      location: j.location || j.job_location || '',
-      url: j.url || j.job_url || '',
-      postedAt: j.posted_at || j.listed_at || j.date || ''
-    })).filter(j => j.title);
-
-    cache.set(cacheKey, jobs);
-    return jobs;
-  } catch (err) {
-    console.warn('Anysite jobs lookup failed:', err.message);
-    cache.set(cacheKey, []);
-    return [];
+function tsToDate(v) {
+  if (!v) return '';
+  if (typeof v === 'number') {
+    const ms = v < 1e12 ? v * 1000 : v; // seconds vs ms
+    try { return new Date(ms).toISOString().slice(0, 10); } catch { return ''; }
   }
+  return String(v);
 }
 
-// Fetch a company's LinkedIn profile. Used for the logo on the results page and
-// a few facts (industry, size, description) that enrich the analysis. Best-effort.
+// Company profile. POST /api/linkedin/company { company } where company is an
+// alias, URL, or URN. Returns logo + name + urn (urn is needed for job search).
 async function getCompanyProfile(identifier) {
   if (!identifier) return null;
 
@@ -144,54 +146,68 @@ async function getCompanyProfile(identifier) {
   try {
     const data = await anysiteFetch('/api/linkedin/company', {
       method: 'POST',
-      body: JSON.stringify({ user: identifier })
+      body: JSON.stringify({ company: identifier, timeout: 300 })
     });
 
-    const c = (data && (data.company || data.data || data.results)) || data || {};
-    const co = Array.isArray(c) ? (c[0] || {}) : c;
-
+    const co = Array.isArray(data) ? (data[0] || {}) : (data && (data.company || data.data || data)) || {};
     const profile = {
       name: co.name || co.company_name || '',
-      logoUrl: co.logo_url || co.logo || co.image || co.profile_picture || co.logoUrl || '',
-      industry: co.industry || '',
-      employeeCount: co.employee_count || co.staff_count || co.company_size || co.employees || '',
-      description: String(co.description || co.tagline || co.about || '').slice(0, 800),
-      headquarters: co.headquarters || co.location || ''
+      logoUrl: co.logo_url || co.logo || co.image || '',
+      urn: urnString(co.urn),
+      alias: co.alias || '',
+      website: co.website || '',
+      industry: co.industry || co.industry_full || '',
+      employeeCount: co.employee_count || co.employee_count_range || '',
+      description: String(co.short_description || co.description || '').slice(0, 800),
+      headquarters: co.headquarter_location || ''
     };
 
+    console.log('[gtmos] getCompanyProfile:', { identifier: String(identifier).slice(0, 40), name: profile.name, hasLogo: !!profile.logoUrl, hasUrn: !!profile.urn });
     cache.set(cacheKey, profile);
     return profile;
   } catch (err) {
-    console.warn('Anysite company lookup failed:', err.message);
-    return null; // not cached, so it can retry on the next request
+    console.warn('[gtmos] getCompanyProfile failed:', err.message);
+    return null;
   }
 }
 
-async function checkBuiltWith(domain) {
-  const cached = cache.get(`builtwith:${domain}`);
+// Open jobs for a company. POST /api/linkedin/search/jobs { company, count }
+// where company is a company URN (from getCompanyProfile.urn).
+async function getCompanyJobs(companyUrn, count = 15) {
+  const urn = urnString(companyUrn);
+  if (!urn) { console.log('[gtmos] getCompanyJobs: no company URN, skipping'); return []; }
+
+  const cacheKey = `jobs:${urn}`;
+  const cached = cache.get(cacheKey);
   if (cached !== null) return cached;
 
   try {
-    const data = await anysiteFetch('/api/ai_based/builtwith/technologies', {
+    const data = await anysiteFetch('/api/linkedin/search/jobs', {
       method: 'POST',
-      body: JSON.stringify({ domain, timeout: 300 })
+      body: JSON.stringify({ company: urn, count })
     });
 
-    const techNames = Array.isArray(data.technology_name)
-      ? data.technology_name.map(t => String(t).toLowerCase())
-      : [];
+    const raw = Array.isArray(data) ? data : (data.jobs || data.results || data.data || []);
+    const jobs = (Array.isArray(raw) ? raw : []).map((j) => ({
+      title: j.name || j.title || j.job_title || '',
+      location: j.location || '',
+      url: j.url || ''
+    })).filter(j => j.title);
 
-    const usesHubSpot = techNames.some(name => name.includes('hubspot'));
-
-    const result = { usesHubSpot, technologies: techNames };
-    cache.set(`builtwith:${domain}`, result);
-    return result;
+    console.log('[gtmos] getCompanyJobs:', { urn: urn.slice(0, 24), got: jobs.length });
+    cache.set(cacheKey, jobs);
+    return jobs;
   } catch (err) {
-    console.warn('BuiltWith lookup failed:', err.message);
-    const fallback = { usesHubSpot: false, technologies: [] };
-    cache.set(`builtwith:${domain}`, fallback);
-    return fallback;
+    console.warn('[gtmos] getCompanyJobs failed:', err.message);
+    cache.set(cacheKey, []);
+    return [];
   }
 }
 
-module.exports = { enrichPersonByEmail, checkBuiltWith, getLinkedInPosts, getCompanyJobs, getCompanyProfile, linkedinUsernameFromUrl };
+module.exports = {
+  enrichPersonByEmail,
+  getLinkedInPosts,
+  getCompanyProfile,
+  getCompanyJobs,
+  urnString
+};

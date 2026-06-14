@@ -75,11 +75,14 @@ router.post('/analyze', async (req, res) => {
       runWorkstreamA(email, domain, sendProgress),
       scraper.scrapeWebsite(websiteUrl).catch(err => {
         console.error('Scraping error:', err.message);
-        return { raw: `Company website: ${websiteUrl}\nDomain: ${domain}\n(Website content could not be fully retrieved)`, meta: {}, pagesScraped: 0 };
+        return { raw: `Company website: ${websiteUrl}\nDomain: ${domain}\n(Website content could not be fully retrieved)`, meta: {}, pagesScraped: 0, usesHubSpot: false };
       })
     ]);
 
-    const { contactId, enrichedPerson, usesHubSpot, linkedinPosts, jobPostings, companyProfile } = enrichmentResult;
+    const { contactId, enrichedPerson, linkedinPosts, jobPostings, companyProfile } = enrichmentResult;
+    // Tier off HubSpot detected in the site source (the BuiltWith endpoint is gone).
+    const usesHubSpot = Boolean(scrapeResult.usesHubSpot);
+    console.log('[gtmos] summary:', { usesHubSpot, posts: Array.isArray(linkedinPosts) ? linkedinPosts.length : 0, jobs: Array.isArray(jobPostings) ? jobPostings.length : 0, company: (companyProfile && companyProfile.name) || 'none', logo: !!(companyProfile && companyProfile.logoUrl) });
 
     // Fold LinkedIn company facts into the research so the model has them too.
     let research = scrapeResult.raw;
@@ -178,23 +181,17 @@ async function runWorkstreamA(email, domain, sendProgress) {
   let contactId = null;
   let enrichedPerson = null;
 
-  // Round 1 (parallel): CRM lookup, tech-stack check, LinkedIn profile enrichment.
-  const [existingContact, builtWithResult, linkedinProfile] = await Promise.all([
+  // Round 1 (parallel): CRM lookup + LinkedIn profile from the email.
+  const [existingContact, linkedinProfile] = await Promise.all([
     hubspot.searchContactByEmail(email).catch(err => {
       console.warn('HubSpot search error:', err.message);
       return null;
     }),
-    anysite.checkBuiltWith(domain).catch(err => {
-      console.warn('BuiltWith error:', err.message);
-      return { usesHubSpot: false, technologies: [] };
-    }),
     anysite.enrichPersonByEmail(email).catch(() => null)
   ]);
 
-  const usesHubSpot = builtWithResult.usesHubSpot;
-
-  // Merge CRM + LinkedIn data. Prefer known CRM name fields; keep the LinkedIn
-  // URL and headline (the CRM usually lacks them) so we can pull posts.
+  // Merge CRM + LinkedIn. Prefer known CRM names; keep the LinkedIn profile URN
+  // and company URN (the CRM lacks them) so we can pull posts, the logo, and jobs.
   if (existingContact || linkedinProfile) {
     const cp = existingContact && existingContact.properties ? existingContact.properties : {};
     enrichedPerson = {
@@ -202,6 +199,8 @@ async function runWorkstreamA(email, domain, sendProgress) {
       lastName: cp.lastname || (linkedinProfile && linkedinProfile.lastName) || '',
       title: cp.jobtitle || (linkedinProfile && linkedinProfile.title) || '',
       company: cp.company || (linkedinProfile && linkedinProfile.company) || '',
+      companyUrn: (linkedinProfile && linkedinProfile.companyUrn) || '',
+      profileUrn: (linkedinProfile && linkedinProfile.profileUrn) || '',
       linkedinUrl: (linkedinProfile && linkedinProfile.linkedinUrl) || cp.linkedin_url || '',
       headline: (linkedinProfile && linkedinProfile.headline) || ''
     };
@@ -228,19 +227,22 @@ async function runWorkstreamA(email, domain, sendProgress) {
     }
   }
 
-  // Round 2 (parallel): the reader's recent posts, the company's open jobs, and
-  // the company's LinkedIn profile (logo + facts).
+  // Round 2 (parallel): the reader's recent posts (by profile URN) + the
+  // company's LinkedIn profile (for logo, name, and the company URN).
   sendProgress('signals', 'Reading your public signals...');
-  const company = (enrichedPerson && enrichedPerson.company) || domain;
-  const [linkedinPosts, jobPostings, companyProfile] = await Promise.all([
-    (enrichedPerson && enrichedPerson.linkedinUrl)
-      ? anysite.getLinkedInPosts(enrichedPerson.linkedinUrl, 20).catch(() => [])
-      : Promise.resolve([]),
-    anysite.getCompanyJobs(company, 15).catch(() => []),
-    anysite.getCompanyProfile(company).catch(() => null)
+  const companyId = (enrichedPerson && (enrichedPerson.companyUrn || enrichedPerson.company)) || domain;
+  const [linkedinPosts, companyProfile] = await Promise.all([
+    anysite.getLinkedInPosts(enrichedPerson && enrichedPerson.profileUrn, 20).catch(() => []),
+    anysite.getCompanyProfile(companyId).catch(() => null)
   ]);
 
-  return { contactId, enrichedPerson, usesHubSpot, linkedinPosts, jobPostings, companyProfile };
+  // Round 3: job search needs a company URN, which the company profile provides.
+  const companyUrn = (companyProfile && companyProfile.urn) || (enrichedPerson && enrichedPerson.companyUrn) || '';
+  const jobPostings = companyUrn
+    ? await anysite.getCompanyJobs(companyUrn, 15).catch(() => [])
+    : [];
+
+  return { contactId, enrichedPerson, linkedinPosts, jobPostings, companyProfile };
 }
 
 // Fetch a stored analysis for rendering (used by the "Open their report"
