@@ -1,32 +1,28 @@
 const express = require('express');
 const anthropic = require('../services/anthropic');
 const slack = require('../services/slack');
+const store = require('../utils/store');
 
 const router = express.Router();
 
-// Injected from index.js (mirrors the PDF route wiring)
-let getAnalysis = () => null;
+// Injected from index.js (mirrors the PDF route wiring). Async: returns a Promise.
+let getAnalysis = async () => null;
 router.setAnalysisStore = (fn) => { getAnalysis = fn; };
 
-// analysisId -> { messages: [{role, text, ts}], slackThreadTs, domain, person }
-const conversations = new Map();
-// slackThreadTs -> analysisId (for inbound team replies)
-const threadIndex = new Map();
-// dedupe Slack event retries
+// Storage keys (Redis when REDIS_URL is set, else in-process Map)
+const chatKey = (analysisId) => `chat:${analysisId}`;            // -> { messages, slackThreadTs, domain, person }
+const threadKey = (ts) => `slackthread:${ts}`;                    // -> analysisId
+
+// Slack retry de-dupe is fine to keep in-process (loss on restart is harmless).
 const seenSlackEvents = new Set();
 
-function getConvo(analysisId, analysis) {
-  let convo = conversations.get(analysisId);
-  if (!convo) {
-    convo = {
-      messages: [],
-      slackThreadTs: null,
-      domain: analysis ? analysis.domain : '',
-      person: analysis ? analysis.enrichedPerson : null
-    };
-    conversations.set(analysisId, convo);
-  }
-  return convo;
+function newConvo(analysis) {
+  return {
+    messages: [],
+    slackThreadTs: null,
+    domain: analysis ? analysis.domain : '',
+    person: analysis ? analysis.enrichedPerson : null
+  };
 }
 
 // ---- Visitor sends a message ----
@@ -37,20 +33,23 @@ router.post('/chat/:analysisId/message', async (req, res) => {
   if (!text) return res.status(400).json({ error: 'Message is required.' });
   if (text.length > 2000) return res.status(400).json({ error: 'Message is too long.' });
 
-  const analysis = getAnalysis(analysisId);
+  const analysis = await getAnalysis(analysisId);
   if (!analysis) {
     return res.status(404).json({ error: 'This report has expired. Please regenerate your analysis.' });
   }
 
-  const convo = getConvo(analysisId, analysis);
-  const visitorMsg = { role: 'visitor', text, ts: Date.now() };
-  convo.messages.push(visitorMsg);
+  const convo = (await store.getJSON(chatKey(analysisId))) || newConvo(analysis);
+  convo.messages.push({ role: 'visitor', text, ts: Date.now() });
 
   const resultsUrl = `${req.protocol}://${req.get('host')}`;
 
-  // Relay to Slack in parallel with generating the AI reply (best-effort).
-  const slackReady = relayVisitorToSlack(convo, analysisId, text, resultsUrl)
-    .catch(err => console.warn('Slack relay error:', err.message));
+  // Relay to Slack (creates/continues the thread). Best-effort.
+  let newThread = false;
+  try {
+    newThread = await relayVisitorToSlack(convo, text, resultsUrl);
+  } catch (err) {
+    console.warn('Slack relay error:', err.message);
+  }
 
   // Generate the concierge reply, grounded in the report.
   let reply;
@@ -70,40 +69,42 @@ router.post('/chat/:analysisId/message', async (req, res) => {
   const assistantMsg = { role: 'assistant', text: reply, ts: Date.now() };
   convo.messages.push(assistantMsg);
 
-  // Post the AI reply into the Slack thread once the thread exists (don't block the response).
-  if (slack.isConfigured()) {
-    slackReady.then(() => {
-      if (convo.slackThreadTs) {
-        slack.postToThread({ threadTs: convo.slackThreadTs, text: reply, author: 'bot', person: convo.person })
-          .catch(err => console.warn('Slack bot post error:', err.message));
-      }
-    });
+  // Persist the conversation (and the thread index if a new thread was opened).
+  await store.setJSON(chatKey(analysisId), convo);
+  if (newThread && convo.slackThreadTs) {
+    await store.setJSON(threadKey(convo.slackThreadTs), analysisId);
+  }
+
+  // Post the AI reply into the Slack thread for team visibility (don't block).
+  if (slack.isConfigured() && convo.slackThreadTs) {
+    slack.postToThread({ threadTs: convo.slackThreadTs, text: reply, author: 'bot', person: convo.person })
+      .catch(err => console.warn('Slack bot post error:', err.message));
   }
 
   res.json({ reply, ts: assistantMsg.ts });
 });
 
-async function relayVisitorToSlack(convo, analysisId, text, resultsUrl) {
-  if (!slack.isConfigured()) return;
+// Mutates convo (sets slackThreadTs). Returns true if a new thread was created.
+async function relayVisitorToSlack(convo, text, resultsUrl) {
+  if (!slack.isConfigured()) return false;
   if (!convo.slackThreadTs) {
-    const threadTs = await slack.startThread({
+    convo.slackThreadTs = await slack.startThread({
       domain: convo.domain,
       person: convo.person,
       text,
       resultsUrl
     });
-    convo.slackThreadTs = threadTs;
-    threadIndex.set(threadTs, analysisId);
-  } else {
-    await slack.postToThread({ threadTs: convo.slackThreadTs, text, author: 'visitor', person: convo.person });
+    return true;
   }
+  await slack.postToThread({ threadTs: convo.slackThreadTs, text, author: 'visitor', person: convo.person });
+  return false;
 }
 
 // ---- Visitor polls for new messages (team replies from Slack) ----
-router.get('/chat/:analysisId/messages', (req, res) => {
+router.get('/chat/:analysisId/messages', async (req, res) => {
   const { analysisId } = req.params;
   const since = Number(req.query.since || 0);
-  const convo = conversations.get(analysisId);
+  const convo = await store.getJSON(chatKey(analysisId));
   if (!convo) return res.json({ messages: [] });
 
   const messages = convo.messages
@@ -133,36 +134,34 @@ router.post('/slack/events', (req, res) => {
   // Acknowledge fast; process after.
   res.status(200).send('');
 
-  try {
-    if (body.type !== 'event_callback' || !body.event) return;
-    const event = body.event;
+  if (body.type !== 'event_callback' || !body.event) return;
+  const event = body.event;
 
-    // Dedupe retries
-    const eventKey = body.event_id || `${event.ts}:${event.channel}`;
-    if (eventKey) {
-      if (seenSlackEvents.has(eventKey)) return;
-      seenSlackEvents.add(eventKey);
-      if (seenSlackEvents.size > 5000) seenSlackEvents.clear();
-    }
-
-    if (event.type !== 'message') return;
-    // Ignore our own bot posts, edits, deletes, and non-thread channel chatter.
-    if (event.bot_id || event.subtype) return;
-    if (!event.thread_ts) return;
-
-    const analysisId = threadIndex.get(event.thread_ts);
-    if (!analysisId) return;
-
-    const convo = conversations.get(analysisId);
-    if (!convo) return;
-
-    const text = stripMrkdwn(event.text || '');
-    if (!text) return;
-
-    convo.messages.push({ role: 'team', text, ts: Date.now() });
-  } catch (err) {
-    console.warn('Slack event handling error:', err.message);
+  // Dedupe retries
+  const eventKey = body.event_id || `${event.ts}:${event.channel}`;
+  if (eventKey) {
+    if (seenSlackEvents.has(eventKey)) return;
+    seenSlackEvents.add(eventKey);
+    if (seenSlackEvents.size > 5000) seenSlackEvents.clear();
   }
+
+  if (event.type !== 'message') return;
+  // Ignore our own bot posts, edits, deletes, and non-thread channel chatter.
+  if (event.bot_id || event.subtype) return;
+  if (!event.thread_ts) return;
+
+  const text = stripMrkdwn(event.text || '');
+  if (!text) return;
+
+  // Persist the team reply (async, after the ack).
+  (async () => {
+    const analysisId = await store.getJSON(threadKey(event.thread_ts));
+    if (!analysisId) return;
+    const convo = await store.getJSON(chatKey(analysisId));
+    if (!convo) return;
+    convo.messages.push({ role: 'team', text, ts: Date.now() });
+    await store.setJSON(chatKey(analysisId), convo);
+  })().catch(err => console.warn('Slack event handling error:', err.message));
 });
 
 function stripMrkdwn(text) {

@@ -6,13 +6,13 @@ const hubspot = require('../services/hubspot');
 const anysite = require('../services/anysite');
 const scraper = require('../services/scraper');
 const anthropic = require('../services/anthropic');
+const store = require('../utils/store');
 
 const router = express.Router();
 
-// In-memory store for analysis results (PDF retrieval + chat grounding).
-// NOTE: a server restart clears this. For durable reports, back this with Redis
-// or a database. See the notes in the PR summary.
-const analysisStore = new Map();
+// Analyses are persisted via the store (Redis when REDIS_URL is set, else an
+// in-process Map). Used for PDF retrieval and chat grounding.
+const analysisKey = (id) => `analysis:${id}`;
 
 router.post('/analyze', async (req, res) => {
   const { email, website } = req.body;
@@ -136,7 +136,7 @@ router.post('/analyze', async (req, res) => {
       postsCount: Array.isArray(linkedinPosts) ? linkedinPosts.length : 0,
       createdAt: new Date().toISOString()
     };
-    analysisStore.set(analysisId, storedAnalysis);
+    await store.setJSON(analysisKey(analysisId), storedAnalysis);
 
     // Push to HubSpot (non-blocking)
     if (contactId) {
@@ -239,7 +239,7 @@ async function runWorkstreamA(email, domain, sendProgress) {
   return { contactId, enrichedPerson, usesHubSpot, linkedinPosts, jobPostings, companyProfile };
 }
 
-// Export the store for the PDF + chat routes
-router.getAnalysis = (id) => analysisStore.get(id);
+// Export the store accessor for the PDF + chat routes (async: returns a Promise)
+router.getAnalysis = (id) => store.getJSON(analysisKey(id));
 
 module.exports = router;
