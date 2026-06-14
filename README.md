@@ -43,12 +43,17 @@ PORT=3000
 
 ## Slack concierge setup
 
-The chat AI works without Slack, but to relay conversations and let the team reply live:
+The chat AI works without Slack. To relay conversations and let the team reply live, set up a Slack app. Deploy the app first, the events URL is verified on creation.
 
-1. Create a Slack app (https://api.slack.com/apps) in your workspace.
-2. **OAuth & Permissions** -> add the `chat:write` bot scope, install the app, copy the **Bot User OAuth Token** into `SLACK_BOT_TOKEN`.
-3. Invite the bot to the target channel and copy its ID into `SLACK_CHANNEL_ID`.
-4. Copy the app's **Signing Secret** into `SLACK_SIGNING_SECRET`.
-5. **Event Subscriptions** -> enable, set the Request URL to `https://gtmos.smokesignals.ai/api/slack/events`, and subscribe to the `message.channels` bot event (and `message.groups` for private channels). Reinstall if prompted.
+**Fast path:** at https://api.slack.com/apps -> **Create New App** -> **From a manifest**, pick your workspace, choose the **YAML** tab, and paste the contents of [`slack-app-manifest.yaml`](./slack-app-manifest.yaml).
+
+Then:
+
+1. **Install App** -> **Install to Workspace** -> copy the **Bot User OAuth Token** (`xoxb-...`) into `SLACK_BOT_TOKEN`.
+2. **Basic Information** -> **Signing Secret** -> copy into `SLACK_SIGNING_SECRET` (the Signing Secret, not the Client Secret or Verification Token).
+3. Invite the bot to the target channel (`/invite @GTM OS Concierge`) and copy the channel ID (`C...`) into `SLACK_CHANNEL_ID`.
+4. **Event Subscriptions** -> confirm the Request URL `https://.../api/slack/events` shows **Verified** (hit **Retry** if the service was cold during creation).
+
+Scopes used: `chat:write` (post into the channel and thread) and `channels:history` (receive thread replies). For private channels, add `groups:history` and the `message.groups` event.
 
 Teammates reply in the thread that opens for each visitor; their replies surface in the visitor's chat widget.
