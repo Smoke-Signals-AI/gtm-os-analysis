@@ -97,7 +97,7 @@ router.post('/analyze', async (req, res) => {
     }
 
     const companyLogoUrl = (companyProfile && companyProfile.logoUrl) || '';
-    const companyName = (companyProfile && companyProfile.name) || (enrichedPerson && enrichedPerson.company) || domain;
+    const companyName = (companyProfile && companyProfile.name) || scrapeResult.siteName || (enrichedPerson && enrichedPerson.company) || domain;
 
     sendProgress('enrichment', 'Research complete. Building your signal strategy...');
 
@@ -181,13 +181,15 @@ async function runWorkstreamA(email, domain, sendProgress) {
   let contactId = null;
   let enrichedPerson = null;
 
-  // Round 1 (parallel): CRM lookup + LinkedIn profile from the email.
-  const [existingContact, linkedinProfile] = await Promise.all([
+  // Round 1 (parallel): CRM lookup, LinkedIn profile from the email, and the
+  // company resolved straight from the website domain (independent of the person).
+  const [existingContact, linkedinProfile, resolvedCompany] = await Promise.all([
     hubspot.searchContactByEmail(email).catch(err => {
       console.warn('HubSpot search error:', err.message);
       return null;
     }),
-    anysite.enrichPersonByEmail(email).catch(() => null)
+    anysite.enrichPersonByEmail(email).catch(() => null),
+    anysite.resolveCompanyByDomain(domain).catch(() => null)
   ]);
 
   // Merge CRM + LinkedIn. Prefer known CRM names; keep the LinkedIn profile URN
@@ -228,16 +230,27 @@ async function runWorkstreamA(email, domain, sendProgress) {
   }
 
   // Round 2 (parallel): the reader's recent posts (by profile URN) + the
-  // company's LinkedIn profile (for logo, name, and the company URN).
+  // company's LinkedIn profile (for logo, name, and the company URN). The company
+  // identifier comes from the domain resolution first, then the person.
   sendProgress('signals', 'Reading your public signals...');
-  const companyId = (enrichedPerson && (enrichedPerson.companyUrn || enrichedPerson.company)) || domain;
-  const [linkedinPosts, companyProfile] = await Promise.all([
+  const companyId = (resolvedCompany && (resolvedCompany.alias || resolvedCompany.urn || resolvedCompany.url || resolvedCompany.name))
+    || (enrichedPerson && (enrichedPerson.companyUrn || enrichedPerson.company))
+    || domain;
+  let [linkedinPosts, companyProfile] = await Promise.all([
     anysite.getLinkedInPosts(enrichedPerson && enrichedPerson.profileUrn, 20).catch(() => []),
     anysite.getCompanyProfile(companyId).catch(() => null)
   ]);
 
-  // Round 3: job search needs a company URN, which the company profile provides.
-  const companyUrn = (companyProfile && companyProfile.urn) || (enrichedPerson && enrichedPerson.companyUrn) || '';
+  // If the full profile failed but we resolved a company, keep its name + URN.
+  if (!companyProfile && resolvedCompany && (resolvedCompany.name || resolvedCompany.urn)) {
+    companyProfile = {
+      name: resolvedCompany.name, logoUrl: '', urn: resolvedCompany.urn,
+      website: resolvedCompany.url, industry: '', employeeCount: '', description: '', headquarters: ''
+    };
+  }
+
+  // Round 3: job search needs a company URN.
+  const companyUrn = (companyProfile && companyProfile.urn) || (resolvedCompany && resolvedCompany.urn) || (enrichedPerson && enrichedPerson.companyUrn) || '';
   const jobPostings = companyUrn
     ? await anysite.getCompanyJobs(companyUrn, 15).catch(() => [])
     : [];
