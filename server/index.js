@@ -30,8 +30,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// Static files
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// Static files. no-cache = always revalidate via ETag, so a deploy's CSS/JS is
+// never served stale (cheap 304s, avoids "is it deployed?" cache confusion).
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
+}));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -55,6 +58,7 @@ app.use('/api', chatRouter);
 
 // Serve index.html for all other routes
 app.get('*', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
