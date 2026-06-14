@@ -54,11 +54,27 @@ function extractMeta(html) {
   return meta;
 }
 
+// HubSpot leaves an unmistakable footprint in a site's source (tracking script,
+// forms, CTAs). Detecting it from the raw HTML is instant and deterministic.
+const HUBSPOT_SIGNATURES = [
+  'js.hs-scripts.com', 'hs-scripts', 'js.hsforms.net', 'hsforms.net', 'hsforms.com',
+  'hs-analytics.net', 'hs-banner.com', 'hubspotusercontent', 'hscollectedforms',
+  'track.hubspot.com', 'cdn2.hubspot.net', 'hbspt.', '_hsenc', 'api.hubapi.com',
+  'hsleadflows', 'forms.hsforms'
+];
+
+function detectHubSpot(htmls) {
+  const hay = htmls.filter(Boolean).join(' ').toLowerCase();
+  return HUBSPOT_SIGNATURES.some(sig => hay.includes(sig));
+}
+
 async function scrapeWebsite(websiteUrl) {
   const pages = {};
+  const rawHtmls = [];
 
   // Fetch homepage first
   const homepageHtml = await fetchPage(websiteUrl);
+  if (homepageHtml) rawHtmls.push(homepageHtml);
   const homeMeta = extractMeta(homepageHtml);
   pages.homepage = {
     url: websiteUrl,
@@ -71,6 +87,7 @@ async function scrapeWebsite(websiteUrl) {
   const subpagePromises = SUBPAGES.map(async (path) => {
     const url = websiteUrl.replace(/\/$/, '') + path;
     const html = await fetchPage(url);
+    if (html) rawHtmls.push(html);
     if (!html) return null;
     const meta = extractMeta(html);
     const content = extractText(html);
@@ -85,6 +102,10 @@ async function scrapeWebsite(websiteUrl) {
 
   const subResults = await Promise.all(subpagePromises);
   pages.subpages = subResults.filter(Boolean);
+
+  // Detect HubSpot from the raw source (before scripts are stripped for text).
+  const usesHubSpot = detectHubSpot(rawHtmls);
+  console.log('[gtmos] scrape:', { url: websiteUrl, pages: 1 + pages.subpages.length, usesHubSpot });
 
   // Compile into a research document
   let research = `# Website Analysis: ${websiteUrl}\n\n`;
@@ -102,7 +123,8 @@ async function scrapeWebsite(websiteUrl) {
   return {
     raw: research.slice(0, 50000),
     meta: homeMeta,
-    pagesScraped: 1 + pages.subpages.length
+    pagesScraped: 1 + pages.subpages.length,
+    usesHubSpot
   };
 }
 
