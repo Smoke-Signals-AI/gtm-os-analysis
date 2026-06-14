@@ -16,7 +16,7 @@ router.get('/pdf/:id', async (req, res) => {
     return res.status(500).json({ error: 'PDF service not initialized' });
   }
 
-  const analysis = getAnalysis(id);
+  const analysis = await getAnalysis(id);
   if (!analysis) {
     return res.status(404).json({ error: 'Analysis not found. It may have expired.' });
   }
