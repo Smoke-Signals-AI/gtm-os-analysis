@@ -135,13 +135,16 @@
       </nav>
 
       <div class="sidebar-actions">
-        <button id="downloadPdfBtn" class="btn-sidebar">
+        <a href="#cta-section" class="btn-book btn-book-block" data-book>Book a Call</a>
+        <button id="downloadPdfBtn" class="btn-ghost">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Download PDF
         </button>
-        <a href="#cta-section" class="btn-sidebar btn-sidebar-accent">Book a Call</a>
       </div>
     </aside>
+
+    <!-- Thin scroll-progress indicator -->
+    <div id="scrollProgress" class="scroll-progress" aria-hidden="true"><div id="scrollProgressBar"></div></div>
 
     <!-- Main Content -->
     <main class="main-content">
@@ -157,7 +160,13 @@
             </div>
           </div>
         </div>
+        <h2 class="overview-headline">See the accounts your competitors cannot.</h2>
         <p class="overview-intro">Alpha signals are proprietary indicators of buying intent, detectable before competitors see them. Below is a sample of what a Smoke Signals GTM operating system looks like for your company.</p>
+        <p class="overview-proof">Built on alpha signals no intent database will ever flag.</p>
+        <div class="overview-cta">
+          <a href="#cta-section" class="btn-book" data-book>Book a 30-min call</a>
+          <span class="cta-note">30 minutes. We map three signals for you. No pitch.</span>
+        </div>
       </div>
 
       <!-- Section 1: ICP -->
@@ -168,6 +177,7 @@
           <span class="section-tag">ICP Profile</span>
         </div>
         <div class="section-body" id="section1Body"></div>
+        <div class="section-cta"><a href="#cta-section" class="section-cta-link" data-book>Want this built for <span class="cta-company">your company</span>? Grab a time &rarr;</a></div>
       </div>
 
       <!-- Section 2: USP -->
@@ -178,6 +188,7 @@
           <span class="section-tag">USP Analysis</span>
         </div>
         <div class="section-body" id="section2Body"></div>
+        <div class="section-cta"><a href="#cta-section" class="section-cta-link" data-book>Want this built for <span class="cta-company">your company</span>? Grab a time &rarr;</a></div>
       </div>
 
       <!-- Section 3: Alpha Signal + Micro-App -->
@@ -188,9 +199,10 @@
           <span class="section-tag">Alpha Signal</span>
         </div>
         <div class="section-body" id="section3Body"></div>
-        <p id="microAppEyebrow" class="micro-app-eyebrow" hidden>A working sample of an app you could put in front of your own prospects</p>
+        <p id="microAppEyebrow" class="micro-app-eyebrow" hidden>This is yours. We build, brand, and operate tools like this as the top of your funnel.</p>
         <!-- Interactive Micro-App rendered here by JS -->
         <div id="microAppContainer" class="micro-app-container"></div>
+        <div class="section-cta"><a href="#cta-section" class="section-cta-link" data-book>Want a tool like this built for <span class="cta-company">your company</span>? Grab a time &rarr;</a></div>
       </div>
 
       <!-- Section 4: Outbound Sequence -->
@@ -202,6 +214,7 @@
         </div>
         <!-- Sequence timeline rendered here by JS -->
         <div id="sequenceTimeline" class="sequence-timeline"></div>
+        <div class="section-cta"><a href="#cta-section" class="section-cta-link" data-book>Want this built for <span class="cta-company">your company</span>? Grab a time &rarr;</a></div>
       </div>
 
       <!-- Section 5: Content + LinkedIn -->
@@ -212,14 +225,21 @@
           <span class="section-tag">Content + LinkedIn</span>
         </div>
         <div class="section-body" id="section5Body"></div>
+        <div class="section-cta"><a href="#cta-section" class="section-cta-link" data-book>Want this built for <span class="cta-company">your company</span>? Grab a time &rarr;</a></div>
       </div>
 
       <!-- CTA -->
       <div id="cta-section" class="rpt-section rpt-cta">
         <div class="cta-inner">
           <p class="label" style="color: rgba(255,255,255,0.45)">Next Step</p>
-          <h2>This is a sample of what we build</h2>
-          <p>Want to see the full signal menu for your company? Let's talk.</p>
+          <h2 id="ctaHeadline">Let's map the signals you are missing</h2>
+          <p id="ctaSub">On a 30-minute call we will map three alpha signals specific to <span class="cta-company">your company</span> and show you the accounts you are currently missing. No pitch, no obligation.</p>
+          <div class="host-intro">
+            <div class="host-meta">
+              <p class="host-name">Your call is with Nick Zeckets</p>
+              <p class="host-cred">Founder of Smoke Signals AI. Two decades building GTM systems for B2B teams.</p>
+            </div>
+          </div>
           <div class="calendar-embed">
             <iframe src="https://smokesignals.ai/meetings/nick-zeckets/discovery" title="Book a Discovery Call"></iframe>
           </div>
@@ -232,6 +252,12 @@
       </footer>
 
     </main>
+
+    <!-- Persistent booking bar (appears on scroll, hidden over the calendar) -->
+    <div id="stickyCta" class="sticky-cta" hidden>
+      <span class="sticky-cta-text">Ready to see the accounts you are missing?</span>
+      <a href="#cta-section" class="btn-book" data-book>Book a 30-min call</a>
+    </div>
   </section>
 
   <!-- ========== CONCIERGE CHAT (AI + Slack handoff) ========== -->

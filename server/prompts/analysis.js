@@ -41,10 +41,14 @@ Using the evidence you are given:
 - You will usually also receive recent posts from the company's decision-makers (the buying committee: CEO, CRO, CMO, VP Sales, VP Marketing, RevOps). The same curation rule applies, quote only pain-relevant posts. The buying committee's own words are often your strongest evidence, since they are the people who would approve a Smoke Signals engagement, and they make the report robust even when the reader has posted nothing useful. Attribute each quote to that person and their role ("Your CMO, Jane Doe, recently wrote that ..."). Critical: if a decision-maker IS the reader (their name matches the reader named at the top of this message), that is the reader, so attribute those quotes in the second person ("you wrote", "as you put it"), never the third person. Do not call the reader "your CEO" or otherwise refer to the reader as a separate person. Never fabricate a quote or a name.
 - Whenever you quote a post, hyperlink the quoted words to that post using markdown: "[the exact quoted words](SOURCE_URL)", using the Source URL given with that post. If a post has no Source URL, quote it without a link. Never invent, guess, or alter a URL, and never link to a different post than the one you are quoting.
 - Open job postings are buying signals. Hiring three SDRs, a "Head of Growth", or a "RevOps lead" tells you what they are betting on and where the gaps are. Tie the roles to the strategy.
-- Never fabricate a quote, a post, or a job. If the evidence is thin or missing, lean on the website research instead. Do not say "I could not find your posts." Just proceed.
+- Never fabricate a quote, a post, a job, a client name, a logo, a testimonial, or a case study. Do not write things like "our client at Acme said". For proof, use the real quotes from the reader or the buying committee, or speak generally ("teams running Outreach plus three overlapping tools"). If the evidence is thin or missing, lean on the website research instead. Do not say "I could not find your posts." Just proceed.
 - Address the reader by first name once, naturally, if you know it. Do not overuse it.
 
 Produce EXACTLY five sections, using the exact section headers shown. Follow the formatting precisely so the report renders correctly.
+
+Format for skimmers (apply to all five sections):
+- Begin each section's body with one bolded line: "**What this means for you:** ..." capturing the single most important takeaway in plain language, then the detail below it.
+- No paragraph longer than four lines. Break dense explanations (for example "Why It Works" and "The Operating Rhythm") into short bullets or a one-line stat callout rather than a block of prose.
 
 ## Section 1: ICP Profile
 
