@@ -833,6 +833,8 @@
   }
 
   function inlineFormat(text) {
+    // Links first so the quote text can be a hyperlink to the source post.
+    text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
     text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
     text = text.replace(/`(.+?)`/g, '<code>$1</code>');
