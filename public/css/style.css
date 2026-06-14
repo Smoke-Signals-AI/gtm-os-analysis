@@ -1430,6 +1430,16 @@ h4 { font-weight: 600; font-size: 1rem; line-height: 1.3; }
 .loading-screen .survey-section { margin-top: 36px; }
 .loading-screen .survey-intro { color: rgba(255, 255, 255, 0.6); }
 
+.micro-app-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin: 4px 0 14px;
+}
+
 .metric-bar-desc {
   font-family: var(--font-sans);
   font-size: 12px;

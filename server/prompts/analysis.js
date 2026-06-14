@@ -16,6 +16,8 @@ This report is a sample deliverable for a prospect. It has two jobs at once:
 
 Hold both. Lead with value, never with a pitch. The proof is in how specific and original the thinking is, not in adjectives about us.
 
+Make one through-line visible across the report: the alpha signal is the seed. It powers an interactive app and original content, those power social posts, and those generate inbound leads that sharpen the signal again. Signal, then app and content, then social, then leads. That flywheel is the product.
+
 Writing rules (these are non-negotiable):
 - Never use exclamation points.
 - Never use em dashes. Use commas, periods, or restructure the sentence instead.
@@ -25,6 +27,12 @@ Writing rules (these are non-negotiable):
 - Email copy follows signal-first architecture: signal hook, bridge to relevance, value without pitching, grateful CTA.
 - LinkedIn content is written for organic reach: hook-first, no hashtag spam, educational tone.
 - Short paragraphs. No walls of text. Sections 1 and 2 are punchy insight cards, not essays.
+
+Voice (this is the line between sharp and AI slop, treat it as non-negotiable):
+- Ground every hook in something concrete and checkable: a number, a named tool, a real moment, a role, a price. Never open on an abstract aphorism.
+- Banned constructions, they read as generated on sight. Do not use any of them: "X did not fail because Y, it failed because Z"; "It is not about X, it is about Y"; "X is dead. Y is not."; "Here is the thing"; "Here is what nobody tells you"; "The result?"; "Let that sink in"; "Read that again"; "What if I told you"; "In a world where". If a line uses the shape "not A, but B" as its hook, delete it and just state the specific thing.
+- Write like a sharp operator talking to a peer, not a thought leader performing for an audience. Short declarative sentences, specific nouns. One surprising, true, concrete claim beats three clever abstractions.
+- Vary sentence shape. Do not stack parallel one-liners into a rhythm that screams generated.
 
 Using the evidence you are given:
 - You may be given the reader's recent LinkedIn posts and their company's open job postings. These are gold. Use them.
@@ -83,7 +91,14 @@ Design ONE highly original alpha signal specific to this company. An alpha signa
 ### How to Detect It
 [2-3 bullets on the data sources and detection method. Be concrete enough that it reads as buildable, not hand-wavy.]
 
-Then design an interactive micro-app that lets the reader feel the signal working on their own inputs. Output the spec as a JSON code block using this EXACT format:
+Then design an interactive app that THIS COMPANY could put in front of its OWN ICP prospects as a free, no-signup lead magnet, exactly like the app the reader is using right now. The alpha signal above is the seed: the app turns that proprietary signal into something genuinely useful for the company's buyer. What the reader plays with on this page is a working sample of an app they could ship to their own market.
+
+Design it for the company's BUYER, not for a salesperson scoring an account:
+- The inputs are questions the company's prospect answers about their own situation, in the prospect's own language.
+- The result delivers real, specific value to that prospect: a benchmark against peers, a diagnosis, a tailored plan, or a readiness score they would actually want and forward to a colleague. It should quietly prove the company understands their world.
+- Aim for something a busy buyer would happily spend 90 seconds on and tell a teammate about, not a lead-qualification quiz. Engagement and genuine usefulness matter more than analytical precision.
+
+Output the spec as a JSON code block using this EXACT format:
 
 \`\`\`microapp
 {
@@ -106,8 +121,8 @@ Then design an interactive micro-app that lets the reader feel the signal workin
 }
 \`\`\`
 
-Scoring rules (critical, the app must produce real, repeatable results, never random):
-- Design 3-5 inputs specific to this company's ICP and signal. Use a mix of types, including at least one select, and one range or yesno.
+Scoring rules (the app must produce repeatable results from the inputs, never random, but optimize for an engaging and valuable experience for the company's prospect):
+- Design 3-5 inputs the company's PROSPECT would answer about their own situation. Use a mix of types, including at least one select, and one range or yesno.
 - Every SCORED input must carry its scoring data inline: a select needs a "scores" map (each option to a 0-100 value), a range needs "scoreDirection" ("higher" means a higher value is a better/stronger signal, "lower" means the opposite), a yesno needs a "score" object with "yes" and "no" values (0-100).
 - A "text" input is for context and personalization only. Do not include it in any metric's "inputs" list.
 - Under "scoring.metrics", give 2-3 named metrics. Each lists the input ids that roll up into it. Every scored input id should appear in exactly one metric.
@@ -116,6 +131,8 @@ Scoring rules (critical, the app must produce real, repeatable results, never ra
 ## Section 4: Outbound Sequence Concept
 
 Design a 3-email outbound sequence triggered by the alpha signal from Section 3.
+
+This is where the flywheel pays off. The value the emails give is the interactive app from Section 3 and the insight from the long-form content in Section 5, not a demo request. Use the alpha signal as the hook, then hand over a genuinely useful asset: the app as a personalized teardown the prospect can run in 90 seconds, or the sharpest insight from the long-form piece. Outbound, content, and the app are one motion, not three.
 
 Format each email EXACTLY like this (this format is critical for rendering):
 
@@ -131,7 +148,7 @@ Format each email EXACTLY like this (this format is critical for rendering):
 ### Email 2: Value Add
 **Subject:** [lowercase, 3-6 words]
 
-[Email body: 50-90 words, adds new value, not "just bumping this"]
+[Email body: 50-90 words. Hand over the actual asset here, the interactive app or the key long-form insight, framed as a gift. Not "just bumping this"]
 
 ### Email 3: Proof + Close
 **Subject:** [lowercase, 3-6 words]
@@ -150,32 +167,42 @@ Rules:
 
 ## Section 5: Content + LinkedIn Plan
 
+This is where the signal and the app become demand. The job: content the reader could post this week that earns real reach and routes attention to the Section 3 app as a lead magnet.
+
 ### Long-form Content Idea
-- **Title:** [specific, compelling title]
+- **Title:** [specific and compelling, not a generic "ultimate guide"]
 - **Target audience:** [who this is for]
-- **Format:** [blog post / guide / report]
+- **Format:** [blog post / guide / interactive teardown]
 - **Key sections:** [3-4 bullet points]
-- **Distribution:** [1-2 sentences on how to distribute]
+- **Lead-magnet tie-in:** [one sentence on how it routes readers into the Section 3 app and feeds the outbound sequence]
 
 ### LinkedIn Content Plan
 
-**Post 1 (Contrarian Take)**
-Hook: "[opening line that stops the scroll]"
-[3-4 sentence summary of the post]
+Model these on how strong operator posts actually work, not on engagement-bait templates. The pattern that earns reach: a first-person story that opens on a concrete decision or number, names real tools and moments, makes one earned contrarian point, and ends with a low-friction ask. Picture a founder posting "We dropped Clay. Not because it is a bad product. Because it is the wrong shape for what GTM is becoming," then naming the actual stack and closing with a free resource plus a one-word comment CTA. Specificity and a real point of view are the whole game.
 
-**Post 2 (Data/Proof)**
-Hook: "[opening line]"
-[3-4 sentence summary]
+Rules for every post:
+- Open on a concrete moment, decision, number, or named thing. Never an abstract hook.
+- First person, peer voice. Name real tools, roles, numbers, or events wherever the evidence supports it.
+- Obey the Voice rules above. None of the banned constructions, especially the "not A, but B" hook.
+- End with one clear, low-friction CTA that drives a measurable action: comment a keyword to get the app or guide, or a direct link. At least two of the four posts route to the Section 3 app as the lead magnet.
 
-**Post 3 (Story/Narrative)**
-Hook: "[opening line]"
-[3-4 sentence summary]
+**Post 1 (Confession / Story)**
+Hook: "[a concrete first line: a decision, an admission, or a number, in the reader's voice]"
+[3-4 sentences: the story and the specific lesson, ending on a CTA to the app]
 
-**Post 4 (Educational Breakdown)**
-Hook: "[opening line]"
-[3-4 sentence summary]
+**Post 2 (Proof / Numbers)**
+Hook: "[opening line built on a specific result or data point]"
+[3-4 sentences]
 
-No hashtags. Write for organic reach. Where a real post or job posting from the reader supports an angle, build the content idea around it.`;
+**Post 3 (Contrarian, earned)**
+Hook: "[a specific contrarian claim grounded in something the reader did or saw, not a slogan]"
+[3-4 sentences]
+
+**Post 4 (Teardown / How it works)**
+Hook: "[opening line that promises a look under the hood]"
+[3-4 sentences that walk through the alpha signal or the app itself]
+
+No hashtags. Write for organic reach. Where a real post or job posting from the reader supports an angle, build the post around it.`;
 
 function getAnalysisPrompt({ websiteResearch, domain, enrichedPerson, linkedinPosts, jobPostings }) {
   const personContext = enrichedPerson && (enrichedPerson.firstName || enrichedPerson.title || enrichedPerson.company)
