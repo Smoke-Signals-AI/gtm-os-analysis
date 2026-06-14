@@ -1,11 +1,26 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Behind Railway's TLS proxy: trust X-Forwarded-* so req.protocol is https.
 app.set('trust proxy', true);
+
+// Cache-bust assets per deploy: index.html references the CSS/JS with
+// ?v=__ASSET_V__, replaced here with a per-boot version so each deploy always
+// serves fresh CSS/JS (kills stale-asset confusion).
+const ASSET_VERSION = Date.now().toString(36);
+const INDEX_HTML = (() => {
+  try {
+    return fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8')
+      .replace(/__ASSET_V__/g, ASSET_VERSION);
+  } catch (e) {
+    console.error('index.html load failed:', e.message);
+    return '';
+  }
+})();
 
 // Middleware. Capture the raw body so we can verify Slack request signatures.
 app.use(express.json({
@@ -33,6 +48,7 @@ app.use((req, res, next) => {
 // Static files. no-cache = always revalidate via ETag, so a deploy's CSS/JS is
 // never served stale (cheap 304s, avoids "is it deployed?" cache confusion).
 app.use(express.static(path.join(__dirname, '..', 'public'), {
+  index: false, // serve index.html via the version-injected handler below
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
 }));
 
@@ -59,6 +75,7 @@ app.use('/api', chatRouter);
 // Serve index.html for all other routes
 app.get('*', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
+  if (INDEX_HTML) return res.type('html').send(INDEX_HTML);
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 

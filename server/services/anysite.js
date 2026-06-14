@@ -64,6 +64,32 @@ async function emailLookup(path, email) {
   }
 }
 
+// Fetch the full, documented profile by alias/URL/URN. Reliable source of the
+// fsd_profile URN (for posts) and current company (from experience).
+async function fetchFullProfile(userId) {
+  if (!userId) return null;
+  try {
+    const data = await anysiteFetch('/api/linkedin/user', {
+      method: 'POST',
+      body: JSON.stringify({ user: userId, timeout: 300, with_experience: true, with_education: false })
+    });
+    const p = Array.isArray(data) ? data[0] : (data && (data.data || data.user || data)) || null;
+    if (!p) return null;
+    const exp = firstExperience(p);
+    return {
+      firstName: p.first_name || p.firstName || '',
+      lastName: p.last_name || p.lastName || '',
+      headline: p.headline || '',
+      profileUrn: urnString(p.urn || p.internal_id),
+      company: (exp && (exp.company || exp.company_name || exp.name)) || '',
+      companyUrn: urnString(exp && (exp.company_urn || exp.companyUrn || exp.urn))
+    };
+  } catch (err) {
+    console.warn('[gtmos] fetchFullProfile failed:', err.message);
+    return null;
+  }
+}
+
 // Email -> LinkedIn profile, with a SQL-lookup fallback. Returns the bits we
 // need, including the fsd_profile URN required for posts. Returns null if the
 // email maps to no LinkedIn profile (personal email, role inbox, no coverage).
@@ -91,6 +117,20 @@ async function enrichPersonByEmail(email) {
       alias: p.alias || '',
       headline: p.headline || ''
     };
+
+    // If the email lookup didn't give a profile URN (needed for posts), resolve
+    // the full profile via the documented endpoint using the alias/URL.
+    if (!result.profileUrn && (result.alias || result.linkedinUrl)) {
+      const full = await fetchFullProfile(result.alias || result.linkedinUrl);
+      if (full) {
+        result.profileUrn = result.profileUrn || full.profileUrn;
+        result.company = result.company || full.company;
+        result.companyUrn = result.companyUrn || full.companyUrn;
+        result.headline = result.headline || full.headline;
+        result.firstName = result.firstName || full.firstName;
+        result.lastName = result.lastName || full.lastName;
+      }
+    }
 
     console.log('[gtmos] enrichPersonByEmail:', {
       hasProfileUrn: !!result.profileUrn,

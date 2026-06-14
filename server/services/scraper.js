@@ -72,6 +72,21 @@ function detectHubSpot(htmls) {
   return HUBSPOT_SIGNATURES.some(sig => hay.includes(sig));
 }
 
+// Derive a clean company/brand name from the page <title>. "Smoke Signals | The
+// GTM OS" -> "Smoke Signals". A reliable, zero-dependency fallback for the title.
+function cleanCompanyName(title) {
+  if (!title) return '';
+  const parts = String(title).split(/\s*[|–—·:]\s*|\s+[-]\s+/)
+    .map(s => s.trim()).filter(Boolean);
+  if (!parts.length) return '';
+  const generic = /^(home|welcome|homepage|official site|loading|untitled)$/i;
+  let name = parts.find(p => !generic.test(p) && p.length <= 40) || parts[0];
+  name = name.replace(/\s+/g, ' ').trim();
+  // Reject sentence-like results (likely a tagline, not a brand).
+  if (!name || name.length > 50 || name.split(' ').length > 6) return '';
+  return name;
+}
+
 async function scrapeWebsite(websiteUrl) {
   const pages = {};
   const rawHtmls = [];
@@ -129,7 +144,7 @@ async function scrapeWebsite(websiteUrl) {
     meta: homeMeta,
     pagesScraped: 1 + pages.subpages.length,
     usesHubSpot,
-    siteName: homeMeta.siteName || ''
+    siteName: homeMeta.siteName || cleanCompanyName(homeMeta.title)
   };
 }
 
