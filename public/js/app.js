@@ -410,6 +410,9 @@
   }
 
   function buildMicroApp(container, spec) {
+    const eyebrow = document.getElementById('microAppEyebrow');
+    if (eyebrow) eyebrow.hidden = false;
+
     const app = document.createElement('div');
     app.className = 'micro-app';
 
