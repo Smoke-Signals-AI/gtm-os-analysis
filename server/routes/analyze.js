@@ -131,6 +131,7 @@ router.post('/analyze', async (req, res) => {
       fullText: analysis.fullText,
       modelUsed: analysis.modelUsed,
       usesHubSpot,
+      companyLogoUrl,
       enrichedPerson,
       jobPostingsCount: Array.isArray(jobPostings) ? jobPostings.length : 0,
       postsCount: Array.isArray(linkedinPosts) ? linkedinPosts.length : 0,
@@ -238,6 +239,24 @@ async function runWorkstreamA(email, domain, sendProgress) {
 
   return { contactId, enrichedPerson, usesHubSpot, linkedinPosts, jobPostings, companyProfile };
 }
+
+// Fetch a stored analysis for rendering (used by the "Open their report"
+// deep link: /?report=<id>). Returns the same shape the SSE 'result' sends.
+router.get('/analysis/:id', async (req, res) => {
+  const a = await store.getJSON(analysisKey(req.params.id));
+  if (!a) return res.status(404).json({ error: 'Report not found. It may have expired.' });
+  res.json({
+    analysisId: a.id,
+    sections: a.sections,
+    modelUsed: a.modelUsed,
+    domain: a.domain,
+    usesHubSpot: a.usesHubSpot,
+    companyLogoUrl: a.companyLogoUrl || '',
+    person: a.enrichedPerson
+      ? { firstName: a.enrichedPerson.firstName || '', title: a.enrichedPerson.title || '' }
+      : null
+  });
+});
 
 // Export the store accessor for the PDF + chat routes (async: returns a Promise)
 router.getAnalysis = (id) => store.getJSON(analysisKey(id));

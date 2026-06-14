@@ -41,7 +41,7 @@ router.post('/chat/:analysisId/message', async (req, res) => {
   const convo = (await store.getJSON(chatKey(analysisId))) || newConvo(analysis);
   convo.messages.push({ role: 'visitor', text, ts: Date.now() });
 
-  const resultsUrl = `${req.protocol}://${req.get('host')}`;
+  const resultsUrl = `${req.protocol}://${req.get('host')}/?report=${encodeURIComponent(analysisId)}`;
 
   // Relay to Slack (creates/continues the thread). Best-effort.
   let newThread = false;
