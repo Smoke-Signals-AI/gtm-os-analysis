@@ -55,6 +55,118 @@ async function enrichPersonByEmail(email) {
   }
 }
 
+// Extract the LinkedIn username/slug from a profile URL.
+// https://www.linkedin.com/in/jane-doe-123 -> "jane-doe-123"
+function linkedinUsernameFromUrl(url) {
+  if (!url) return null;
+  const m = String(url).match(/linkedin\.com\/in\/([^/?#]+)/i);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+// Fetch a person's recent LinkedIn posts. Best-effort: returns [] on any failure
+// so the analysis proceeds without it. `identifier` is the LinkedIn username/slug
+// (or a full profile URL, from which we extract the slug).
+async function getLinkedInPosts(identifier, count = 20) {
+  const user = linkedinUsernameFromUrl(identifier) || identifier;
+  if (!user) return [];
+
+  const cacheKey = `liposts:${user}`;
+  const cached = cache.get(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const data = await anysiteFetch('/api/linkedin/user/posts', {
+      method: 'POST',
+      body: JSON.stringify({ user, count })
+    });
+
+    const raw = Array.isArray(data) ? data
+      : (data.posts || data.results || data.data || []);
+
+    const posts = (Array.isArray(raw) ? raw : []).map((p) => ({
+      text: p.text || p.commentary || p.content || p.title || '',
+      date: p.posted_at || p.date || p.published || p.created_at || '',
+      url: p.url || p.post_url || p.share_url || ''
+    })).filter(p => p.text);
+
+    cache.set(cacheKey, posts);
+    return posts;
+  } catch (err) {
+    console.warn('Anysite posts lookup failed:', err.message);
+    cache.set(cacheKey, []);
+    return [];
+  }
+}
+
+// Search a company's open LinkedIn job postings. Best-effort: returns [] on
+// failure. `company` is a company name (we fall back to the domain root).
+async function getCompanyJobs(company, count = 15) {
+  if (!company) return [];
+
+  const cacheKey = `jobs:${String(company).toLowerCase()}`;
+  const cached = cache.get(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const data = await anysiteFetch('/api/linkedin/search/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ company, count })
+    });
+
+    const raw = Array.isArray(data) ? data
+      : (data.jobs || data.results || data.data || []);
+
+    const jobs = (Array.isArray(raw) ? raw : []).map((j) => ({
+      title: j.title || j.job_title || j.name || '',
+      location: j.location || j.job_location || '',
+      url: j.url || j.job_url || '',
+      postedAt: j.posted_at || j.listed_at || j.date || ''
+    })).filter(j => j.title);
+
+    cache.set(cacheKey, jobs);
+    return jobs;
+  } catch (err) {
+    console.warn('Anysite jobs lookup failed:', err.message);
+    cache.set(cacheKey, []);
+    return [];
+  }
+}
+
+// Fetch a company's LinkedIn profile. Used for the logo on the results page and
+// a few facts (industry, size, description) that enrich the analysis. Best-effort.
+async function getCompanyProfile(identifier) {
+  if (!identifier) return null;
+
+  const cacheKey = `company:${String(identifier).toLowerCase()}`;
+  const cached = cache.get(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const data = await anysiteFetch('/api/linkedin/company', {
+      method: 'POST',
+      body: JSON.stringify({ user: identifier })
+    });
+
+    const c = (data && (data.company || data.data || data.results)) || data || {};
+    const co = Array.isArray(c) ? (c[0] || {}) : c;
+
+    const profile = {
+      name: co.name || co.company_name || '',
+      logoUrl: co.logo_url || co.logo || co.image || co.profile_picture || co.logoUrl || '',
+      industry: co.industry || '',
+      employeeCount: co.employee_count || co.staff_count || co.company_size || co.employees || '',
+      description: String(co.description || co.tagline || co.about || '').slice(0, 800),
+      headquarters: co.headquarters || co.location || ''
+    };
+
+    cache.set(cacheKey, profile);
+    return profile;
+  } catch (err) {
+    console.warn('Anysite company lookup failed:', err.message);
+    return null; // not cached, so it can retry on the next request
+  }
+}
+
 async function checkBuiltWith(domain) {
   const cached = cache.get(`builtwith:${domain}`);
   if (cached !== null) return cached;
@@ -82,4 +194,4 @@ async function checkBuiltWith(domain) {
   }
 }
 
-module.exports = { enrichPersonByEmail, checkBuiltWith };
+module.exports = { enrichPersonByEmail, checkBuiltWith, getLinkedInPosts, getCompanyJobs, getCompanyProfile, linkedinUsernameFromUrl };

@@ -37,19 +37,50 @@
     </div>
   </section>
 
-  <!-- ========== LOADING SCREEN WITH SURVEY ========== -->
+  <!-- ========== LOADING SCREEN: SIGNAL LIFECYCLE ========== -->
   <section id="loadingScreen" class="loading-screen">
-    <div class="loading-top">
-      <div class="loading-indicator"></div>
-      <p id="loadingStatus" class="loading-status">Starting your analysis...</p>
-      <p id="loadingSubstatus" class="loading-substatus">This typically takes 60-90 seconds</p>
+    <div class="signal-stage">
+      <div class="signal-beam" aria-hidden="true">
+        <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+        <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+      </div>
+
+      <p class="loading-eyebrow">Building your GTM operating system</p>
+      <h2 id="signalPrinciple" class="signal-principle">If it does not start at signal creation, it is not a motion. It is noise.</h2>
+
+      <ol class="lifecycle" id="lifecycle" aria-label="Signal lifecycle">
+        <li class="phase active" data-phase="creation">
+          <span class="phase-dot"></span>
+          <span class="phase-name">Creation</span>
+          <span class="phase-desc">Detecting the alpha signal</span>
+        </li>
+        <li class="phase" data-phase="capture">
+          <span class="phase-dot"></span>
+          <span class="phase-name">Capture</span>
+          <span class="phase-desc">Turning intent into a program</span>
+        </li>
+        <li class="phase" data-phase="activation">
+          <span class="phase-dot"></span>
+          <span class="phase-name">Activation</span>
+          <span class="phase-desc">Deploying across channels</span>
+        </li>
+      </ol>
+
+      <p id="loadingStatus" class="loading-status">Tuning in to your market...</p>
+      <p id="loadingSubstatus" class="loading-substatus">Reading the smoke before anyone else can</p>
       <div class="loading-progress">
         <div id="loadingBar" class="loading-progress-bar"></div>
       </div>
     </div>
 
+    <!-- The report streams in here once generation begins -->
+    <div id="streamPanel" class="stream-panel" hidden>
+      <div class="stream-panel-head"><span class="stream-dot"></span> Your report is forming, live</div>
+      <div id="streamTranscript" class="stream-transcript" aria-live="polite"></div>
+    </div>
+
     <div id="surveySection" class="survey-section">
-      <p class="survey-intro">While we build your report, help us tailor your strategy</p>
+      <p class="survey-intro">While we read your signals, help us tailor your strategy</p>
 
       <div class="survey-card" id="surveyCard1">
         <p class="survey-question">What tools have you tried for GTM?</p>
@@ -202,6 +233,36 @@
 
     </main>
   </section>
+
+  <!-- ========== CONCIERGE CHAT (AI + Slack handoff) ========== -->
+  <div id="chatWidget" class="chat-widget" hidden>
+    <button id="chatLauncher" class="chat-launcher" aria-label="Chat with Smoke Signals">
+      <svg class="chat-launcher-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+      <span class="chat-launcher-label">Ask about your signal</span>
+    </button>
+
+    <div id="chatPanel" class="chat-panel" hidden>
+      <div class="chat-header">
+        <div class="chat-header-id">
+          <span class="chat-status-dot"></span>
+          <div>
+            <p class="chat-header-title">Smoke Signals concierge</p>
+            <p class="chat-header-sub">Ask anything about your report</p>
+          </div>
+        </div>
+        <button id="chatClose" class="chat-close" aria-label="Close chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="chatMessages" class="chat-messages"></div>
+      <form id="chatForm" class="chat-input">
+        <input type="text" id="chatInput" placeholder="Ask about your alpha signal..." autocomplete="off" maxlength="2000">
+        <button type="submit" id="chatSend" aria-label="Send message">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </form>
+    </div>
+  </div>
 
   <script src="/js/app.js"></script>
 </body>

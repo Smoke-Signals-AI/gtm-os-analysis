@@ -1,14 +1,24 @@
 # GTM OS — Smoke Signals AI
 
-Signal-based GTM intelligence app. Visitors enter their email and company website, receive a comprehensive analysis powered by alpha signals.
+Signal-based GTM intelligence app. Visitors enter their email and company website, receive a comprehensive analysis powered by alpha signals, and can chat with an AI concierge that hands off to the team in Slack.
 
 ## Stack
 
 - Node.js + Express backend
-- Anthropic API (Claude) for AI analysis
-- Anysite.io for LinkedIn enrichment + BuiltWith tech stack lookup
+- Anthropic API (Claude) for AI analysis (streamed) and the concierge chat
+  - Premium tier: `claude-opus-4-8` when the company's site uses HubSpot
+  - Standard tier: `claude-sonnet-4-6` otherwise
+- Anysite.io for LinkedIn enrichment, the reader's recent posts, the company's open job postings, company profile/logo, and BuiltWith tech stack lookup
 - HubSpot API for CRM operations
+- Slack (Web API + Events API) for the concierge chat handoff
 - Deployed on Railway at gtmos.smokesignals.ai
+
+## How it works
+
+1. Visitor submits email + website.
+2. In parallel: website scrape, CRM lookup, BuiltWith check, LinkedIn profile enrichment, then the reader's recent LinkedIn posts, the company's open jobs, and the company profile (logo + facts).
+3. Claude streams a five-section GTM report. The frontend renders it live (perceived speed), then upgrades to the full interactive layout (alpha-signal micro-app, sequence timeline).
+4. On the results page, an AI concierge answers questions grounded in the visitor's report. Conversations relay to a Slack channel; teammates can reply in the thread and it appears in the widget.
 
 ## Setup
 
@@ -25,5 +35,20 @@ npm start
 HUBSPOT_ACCESS_TOKEN=   # HubSpot private app token
 ANYSITE_API_KEY=        # Anysite.io API key
 ANTHROPIC_API_KEY=      # Anthropic API key
+SLACK_BOT_TOKEN=        # (optional) xoxb-... bot token with chat:write
+SLACK_CHANNEL_ID=       # (optional) channel for visitor conversations, e.g. C0123ABCD
+SLACK_SIGNING_SECRET=   # (optional) verifies inbound Slack Events API requests
 PORT=3000
 ```
+
+## Slack concierge setup
+
+The chat AI works without Slack, but to relay conversations and let the team reply live:
+
+1. Create a Slack app (https://api.slack.com/apps) in your workspace.
+2. **OAuth & Permissions** -> add the `chat:write` bot scope, install the app, copy the **Bot User OAuth Token** into `SLACK_BOT_TOKEN`.
+3. Invite the bot to the target channel and copy its ID into `SLACK_CHANNEL_ID`.
+4. Copy the app's **Signing Secret** into `SLACK_SIGNING_SECRET`.
+5. **Event Subscriptions** -> enable, set the Request URL to `https://gtmos.smokesignals.ai/api/slack/events`, and subscribe to the `message.channels` bot event (and `message.groups` for private channels). Reinstall if prompted.
+
+Teammates reply in the thread that opens for each visitor; their replies surface in the visitor's chat widget.
