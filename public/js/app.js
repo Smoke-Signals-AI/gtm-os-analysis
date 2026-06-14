@@ -341,11 +341,19 @@
     const companyName = data.companyName || domain;
     resultsDomain.textContent = companyName;
 
-    // Personalize the intro with the reader's first name and the real company name.
+    // Personalize the intro: by first name if known, else by company name, else generic.
     const introEl = document.querySelector('.overview-intro');
     if (introEl) {
-      const greet = currentPerson && currentPerson.firstName ? currentPerson.firstName + ', ' : '';
-      introEl.textContent = greet + 'alpha signals are proprietary indicators of buying intent you can detect before competitors do. Below is a sample of the GTM operating system Smoke Signals would build for ' + companyName + '.';
+      const firstName = currentPerson && currentPerson.firstName ? currentPerson.firstName : '';
+      const companyKnown = companyName && companyName !== domain;
+      const line = 'alpha signals are proprietary indicators of buying intent you can detect before competitors do.';
+      if (firstName) {
+        introEl.textContent = firstName + ', ' + line + ' Below is a sample of the GTM operating system Smoke Signals would build for ' + companyName + '.';
+      } else if (companyKnown) {
+        introEl.textContent = companyName + ', ' + line + ' Below is a sample of the GTM operating system Smoke Signals would build for you.';
+      } else {
+        introEl.textContent = 'Alpha signals are proprietary indicators of buying intent you can detect before competitors do. Below is a sample of the GTM operating system Smoke Signals would build for ' + companyName + '.';
+      }
     }
 
     // Company logo: LinkedIn (Anysite) -> Clearbit -> favicon -> hide.
