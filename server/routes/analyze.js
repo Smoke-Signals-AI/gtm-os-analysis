@@ -317,16 +317,34 @@ async function runWorkstreamA(email, domain, sendProgress) {
     (companyUrn || companyName) ? anysite.getCompanyDecisionMakers(companyUrn, companyName, 12).catch(() => []) : Promise.resolve([])
   ]);
 
-  // Round 4: recent posts for the top few decision-makers (dedup the reader).
+  // Identify the reader among the execs (by URN or full name) so we never quote
+  // them as a third-person "decision-maker" and can recover their own posts.
   const readerUrn = enrichedPerson && enrichedPerson.profileUrn;
-  const topExecs = execs.filter(e => e.profileUrn && e.profileUrn !== readerUrn).slice(0, 3);
-  const decisionMakers = await Promise.all(topExecs.map(async (e) => ({
+  const readerName = enrichedPerson ? `${enrichedPerson.firstName || ''} ${enrichedPerson.lastName || ''}`.trim().toLowerCase() : '';
+  const isReader = (e) => (readerUrn && e.profileUrn === readerUrn) ||
+    (readerName && readerName.includes(' ') && e.name && e.name.trim().toLowerCase() === readerName);
+
+  const readerExec = execs.find(isReader);
+  const otherExecs = execs.filter(e => e.profileUrn && !isReader(e)).slice(0, 3);
+
+  const decisionMakers = await Promise.all(otherExecs.map(async (e) => ({
     name: e.name,
     headline: e.headline,
     posts: await anysite.getLinkedInPosts(e.profileUrn, 10).catch(() => [])
   })));
 
-  return { contactId, enrichedPerson, linkedinPosts, jobPostings, companyProfile, decisionMakers };
+  // If the reader showed up as an exec and we have no reader posts yet, pull theirs
+  // (so their own words are attributed in the first person, not as "your CEO").
+  let readerPosts = linkedinPosts;
+  if ((!readerPosts || !readerPosts.length) && readerExec && readerExec.profileUrn) {
+    readerPosts = await anysite.getLinkedInPosts(readerExec.profileUrn, 20).catch(() => []);
+    if (enrichedPerson) {
+      enrichedPerson.profileUrn = enrichedPerson.profileUrn || readerExec.profileUrn;
+      if (!enrichedPerson.headline) enrichedPerson.headline = readerExec.headline || '';
+    }
+  }
+
+  return { contactId, enrichedPerson, linkedinPosts: readerPosts, jobPostings, companyProfile, decisionMakers };
 }
 
 // Fetch a stored analysis for rendering (used by the "Open their report"
