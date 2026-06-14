@@ -10,7 +10,13 @@ let redisReady = false;
 if (process.env.REDIS_URL) {
   try {
     const { createClient } = require('redis');
-    redis = createClient({ url: process.env.REDIS_URL });
+    redis = createClient({
+      url: process.env.REDIS_URL,
+      // Railway's private URL (redis.railway.internal) resolves over IPv6 only.
+      // family: 0 lets node-redis resolve both A and AAAA records. Harmless on
+      // the public IPv4 URL, so it works either way.
+      socket: { family: 0 }
+    });
     redis.on('error', (e) => { redisReady = false; console.warn('Redis error:', e.message); });
     redis.on('ready', () => { redisReady = true; });
     redis.connect()
