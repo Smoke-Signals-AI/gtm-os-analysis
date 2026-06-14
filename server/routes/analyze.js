@@ -94,6 +94,7 @@ router.post('/analyze', async (req, res) => {
     }
 
     const companyLogoUrl = (companyProfile && companyProfile.logoUrl) || '';
+    const companyName = (companyProfile && companyProfile.name) || (enrichedPerson && enrichedPerson.company) || domain;
 
     sendProgress('enrichment', 'Research complete. Building your signal strategy...');
 
@@ -132,6 +133,7 @@ router.post('/analyze', async (req, res) => {
       modelUsed: analysis.modelUsed,
       usesHubSpot,
       companyLogoUrl,
+      companyName,
       enrichedPerson,
       jobPostingsCount: Array.isArray(jobPostings) ? jobPostings.length : 0,
       postsCount: Array.isArray(linkedinPosts) ? linkedinPosts.length : 0,
@@ -160,6 +162,7 @@ router.post('/analyze', async (req, res) => {
       sections: analysis.sections,
       modelUsed: analysis.modelUsed,
       domain,
+      companyName,
       usesHubSpot,
       companyLogoUrl,
       person: enrichedPerson ? { firstName: enrichedPerson.firstName || '', title: enrichedPerson.title || '' } : null
@@ -250,6 +253,7 @@ router.get('/analysis/:id', async (req, res) => {
     sections: a.sections,
     modelUsed: a.modelUsed,
     domain: a.domain,
+    companyName: a.companyName || a.domain,
     usesHubSpot: a.usesHubSpot,
     companyLogoUrl: a.companyLogoUrl || '',
     person: a.enrichedPerson
