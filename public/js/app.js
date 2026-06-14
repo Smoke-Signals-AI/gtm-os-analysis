@@ -337,10 +337,18 @@
     currentAnalysisId = data.analysisId;
     currentPerson = data.person || null;
 
-    const domain = data.domain || 'Your Company';
-    resultsDomain.textContent = domain;
+    const domain = data.domain || 'your company';
+    const companyName = data.companyName || domain;
+    resultsDomain.textContent = companyName;
 
-    // Company logo: prefer the LinkedIn logo from Anysite, fall back to Clearbit, then hide.
+    // Personalize the intro with the reader's first name and the real company name.
+    const introEl = document.querySelector('.overview-intro');
+    if (introEl) {
+      const greet = currentPerson && currentPerson.firstName ? currentPerson.firstName + ', ' : '';
+      introEl.textContent = greet + 'alpha signals are proprietary indicators of buying intent you can detect before competitors do. Below is a sample of the GTM operating system Smoke Signals would build for ' + companyName + '.';
+    }
+
+    // Company logo: LinkedIn (Anysite) -> Clearbit -> favicon -> hide.
     setCompanyLogo(data.companyLogoUrl, domain);
 
     // Render sections
@@ -357,24 +365,24 @@
     setupChat();
   }
 
+  // Try the LinkedIn logo, then Clearbit, then Google's favicon service (which
+  // nearly always returns something), then hide. Steps through on each error.
   function setCompanyLogo(url, domain) {
     if (!companyLogo) return;
-    companyLogo.style.display = '';
-    let triedClearbit = false;
-    companyLogo.onerror = function () {
-      if (!triedClearbit) {
-        triedClearbit = true;
-        this.src = 'https://logo.clearbit.com/' + domain;
-      } else {
-        this.style.display = 'none';
-      }
-    };
-    if (url) {
-      companyLogo.src = url;
-    } else {
-      triedClearbit = true;
-      companyLogo.src = 'https://logo.clearbit.com/' + domain;
+    const candidates = [];
+    if (url) candidates.push(url);
+    if (domain) {
+      candidates.push('https://logo.clearbit.com/' + domain);
+      candidates.push('https://www.google.com/s2/favicons?domain=' + encodeURIComponent(domain) + '&sz=128');
     }
+    let i = 0;
+    function tryNext() {
+      if (i >= candidates.length) { companyLogo.style.display = 'none'; return; }
+      companyLogo.src = candidates[i++];
+    }
+    companyLogo.style.display = '';
+    companyLogo.onerror = tryNext;
+    tryNext();
   }
 
   function renderSection(elementId, content) {
