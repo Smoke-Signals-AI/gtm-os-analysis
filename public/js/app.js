@@ -25,9 +25,9 @@
   const companyLogo = document.getElementById('companyLogo');
 
   // Survey elements
-  const surveySubmitBtn = document.getElementById('surveySubmitBtn');
   const surveyThanks = document.getElementById('surveyThanks');
   const surveySection = document.getElementById('surveySection');
+  let flushSurvey = function () {}; // set by setupSurvey; flushed on results render
 
   // Loading / signal-lifecycle elements
   const signalPrinciple = document.getElementById('signalPrinciple');
@@ -163,45 +163,40 @@
     streamTranscript.scrollTop = streamTranscript.scrollHeight;
   }
 
-  // ---------- Survey ----------
+  // ---------- Survey (auto-capture, no submit button) ----------
   function setupSurvey() {
-    let surveyDone = false;
+    let saveTimer = null;
+    let confirmed = false;
 
-    // Drive selection in JS so it never depends on native label/checkbox quirks
-    // or CSS stacking. Clicking a chip toggles its checkbox and a .selected class.
+    function autosave() {
+      const tools = Array.from(surveySection.querySelectorAll('input[name="tools"]:checked')).map(c => c.value);
+      const capture = Array.from(surveySection.querySelectorAll('input[name="capture"]:checked')).map(c => c.value);
+      if (!tools.length && !capture.length) return;
+      if (currentEmail) {
+        fetch('/api/survey', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: currentEmail, tools, capture })
+        }).catch(function () {});
+      }
+      if (!confirmed && surveyThanks) { confirmed = true; surveyThanks.style.display = 'block'; }
+    }
+
+    // Selections are captured as they are made. No submit step.
     surveySection.querySelectorAll('.chip').forEach(function (chip) {
       const cb = chip.querySelector('input[type="checkbox"]');
       if (!cb) return;
       chip.addEventListener('click', function (e) {
         e.preventDefault();
-        if (surveyDone) return;
         cb.checked = !cb.checked;
         chip.classList.toggle('selected', cb.checked);
-        surveySubmitBtn.disabled = !surveySection.querySelector('input[type="checkbox"]:checked');
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(autosave, 700); // debounce
       });
     });
 
-    surveySubmitBtn.addEventListener('click', async () => {
-      const tools = Array.from(surveySection.querySelectorAll('input[name="tools"]:checked')).map(c => c.value);
-      const capture = Array.from(surveySection.querySelectorAll('input[name="capture"]:checked')).map(c => c.value);
-
-      surveyDone = true;
-      surveySubmitBtn.disabled = true;
-      surveySubmitBtn.textContent = 'Submitting...';
-
-      try {
-        await fetch('/api/survey', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: currentEmail, tools, capture })
-        });
-      } catch (e) {
-        // Silently fail
-      }
-
-      surveySubmitBtn.style.display = 'none';
-      surveyThanks.style.display = 'block';
-    });
+    // Final flush when results render (the contact definitely exists by then).
+    flushSurvey = autosave;
   }
 
   setupSurvey();
@@ -371,6 +366,7 @@
     // Setup sidebar scroll tracking + concierge chat
     setupSidebarNav();
     setupChat();
+    flushSurvey(); // capture any final survey selections now the contact exists
   }
 
   // Try the LinkedIn logo, then Clearbit, then Google's favicon service (which
