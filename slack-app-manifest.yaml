@@ -1,0 +1,37 @@
+# Slack app manifest for the GTM OS concierge.
+#
+# Create the app at https://api.slack.com/apps -> Create New App -> From a
+# manifest -> pick your workspace -> YAML tab -> paste this file.
+#
+# The app must be deployed and reachable at request_url before creation, since
+# Slack verifies the events URL immediately (the endpoint answers the challenge
+# before checking the signature, so it verifies even before env vars are set).
+#
+# Scopes:
+#   chat:write       post visitor + AI messages into the channel/thread
+#   channels:history  receive message events (team replies) from public channels
+# For private channels, add groups:history below and message.groups under bot_events.
+
+display_information:
+  name: GTM OS Concierge
+  description: Relays results-page chats to Slack and sends replies back.
+
+features:
+  bot_user:
+    display_name: GTM OS Concierge
+    always_online: true
+
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - channels:history
+
+settings:
+  event_subscriptions:
+    request_url: https://gtmos.smokesignals.ai/api/slack/events
+    bot_events:
+      - message.channels
+  socket_mode_enabled: false
+  org_deploy_enabled: false
+  token_rotation_enabled: false
