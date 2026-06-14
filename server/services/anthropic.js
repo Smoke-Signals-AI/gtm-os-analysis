@@ -1,5 +1,5 @@
 const Anthropic = require('@anthropic-ai/sdk');
-const { getAnalysisPrompt } = require('../prompts/analysis');
+const { getAnalysisPrompt, getChatSystemPrompt } = require('../prompts/analysis');
 
 let client;
 
@@ -10,39 +10,94 @@ function getClient() {
   return client;
 }
 
-async function generateAnalysis({ websiteResearch, domain, usesHubSpot, enrichedPerson }) {
-  const model = usesHubSpot ? 'claude-opus-4-6' : 'claude-sonnet-4-6';
-  const modelLabel = usesHubSpot ? 'opus-4.6' : 'sonnet-4.6';
+// Premium path uses the most capable Opus tier; standard path uses Sonnet.
+const MODELS = {
+  premium: { id: 'claude-opus-4-8', label: 'opus-4.8' },
+  standard: { id: 'claude-sonnet-4-6', label: 'sonnet-4.6' }
+};
+
+// Generate the analysis with streaming. onDelta(textChunk) is invoked as tokens
+// arrive so the frontend can render the report progressively. The model and
+// total token count are unchanged versus a blocking call, but the reader sees
+// content within seconds instead of staring at a bar for 60-90s.
+async function generateAnalysis({ websiteResearch, domain, usesHubSpot, enrichedPerson, linkedinPosts, jobPostings, onDelta }) {
+  const tier = usesHubSpot ? MODELS.premium : MODELS.standard;
 
   const { systemPrompt, userPrompt } = getAnalysisPrompt({
     websiteResearch,
     domain,
-    enrichedPerson
+    enrichedPerson,
+    linkedinPosts,
+    jobPostings
   });
 
   const anthropic = getClient();
 
-  const message = await anthropic.messages.create({
-    model,
+  const stream = anthropic.messages.stream({
+    model: tier.id,
     max_tokens: 8000,
-    system: systemPrompt,
+    // The system prompt is static across requests, so cache it. Cheaper and a
+    // little faster on the prefix; harmless when the prefix is below the cache
+    // minimum for a given model.
+    system: [
+      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }
+    ],
     messages: [{ role: 'user', content: userPrompt }]
   });
+
+  if (typeof onDelta === 'function') {
+    stream.on('text', (delta) => {
+      try { onDelta(delta); } catch (_) { /* never let a render error kill the stream */ }
+    });
+  }
+
+  const message = await stream.finalMessage();
 
   const fullText = message.content
     .filter(block => block.type === 'text')
     .map(block => block.text)
     .join('\n');
 
-  // Parse the five sections
   const sections = parseSections(fullText);
 
   return {
     fullText,
     sections,
-    modelUsed: modelLabel,
-    model
+    modelUsed: tier.label,
+    model: tier.id
   };
+}
+
+// Concierge chat reply, grounded in the visitor's report. Fast, non-streaming,
+// short answers. Uses Sonnet for speed and cost.
+async function generateChatReply({ domain, sections, enrichedPerson, history, userMessage }) {
+  const anthropic = getClient();
+
+  const systemPrompt = getChatSystemPrompt({ domain, sections, enrichedPerson });
+
+  const messages = [];
+  (history || []).slice(-12).forEach((m) => {
+    if (m.role === 'visitor') messages.push({ role: 'user', content: m.text });
+    else if (m.role === 'assistant') messages.push({ role: 'assistant', content: m.text });
+    // human/team replies are folded in as assistant turns so the bot stays consistent
+    else if (m.role === 'team') messages.push({ role: 'assistant', content: m.text });
+  });
+  messages.push({ role: 'user', content: userMessage });
+
+  const message = await anthropic.messages.create({
+    model: MODELS.standard.id,
+    max_tokens: 600,
+    system: [
+      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }
+    ],
+    messages
+  });
+
+  return message.content
+    .filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join('\n')
+    .trim();
 }
 
 function parseSections(text) {
@@ -96,4 +151,4 @@ function parseSections(text) {
   return sections;
 }
 
-module.exports = { generateAnalysis };
+module.exports = { generateAnalysis, generateChatReply };

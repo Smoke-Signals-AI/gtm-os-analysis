@@ -9,7 +9,9 @@ const anthropic = require('../services/anthropic');
 
 const router = express.Router();
 
-// In-memory store for analysis results (for PDF retrieval)
+// In-memory store for analysis results (PDF retrieval + chat grounding).
+// NOTE: a server restart clears this. For durable reports, back this with Redis
+// or a database. See the notes in the PR summary.
 const analysisStore = new Map();
 
 router.post('/analyze', async (req, res) => {
@@ -32,7 +34,7 @@ router.post('/analyze', async (req, res) => {
   const domain = extractDomain(websiteUrl);
   const analysisId = uuidv4();
 
-  // Set up SSE for progress updates
+  // Set up SSE for progress + streaming updates
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -42,6 +44,10 @@ router.post('/analyze', async (req, res) => {
 
   function sendProgress(stage, message) {
     res.write(`data: ${JSON.stringify({ type: 'progress', stage, message })}\n\n`);
+  }
+
+  function sendDelta(text) {
+    res.write(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`);
   }
 
   function sendResult(data) {
@@ -62,7 +68,7 @@ router.post('/analyze', async (req, res) => {
       console.warn('Property setup warning:', err.message)
     );
 
-    // PARALLEL: Workstream A (enrichment + CRM) and Workstream B (website scraping)
+    // PARALLEL: Workstream A (enrichment + CRM + LinkedIn evidence) and Workstream B (website scraping)
     sendProgress('research', 'Analyzing your website...');
 
     const [enrichmentResult, scrapeResult] = await Promise.all([
@@ -73,11 +79,25 @@ router.post('/analyze', async (req, res) => {
       })
     ]);
 
+    const { contactId, enrichedPerson, usesHubSpot, linkedinPosts, jobPostings, companyProfile } = enrichmentResult;
+
+    // Fold LinkedIn company facts into the research so the model has them too.
+    let research = scrapeResult.raw;
+    if (companyProfile && (companyProfile.industry || companyProfile.employeeCount || companyProfile.description)) {
+      const facts = [
+        companyProfile.industry ? `Industry: ${companyProfile.industry}` : '',
+        companyProfile.employeeCount ? `Employees: ${companyProfile.employeeCount}` : '',
+        companyProfile.headquarters ? `HQ: ${companyProfile.headquarters}` : '',
+        companyProfile.description ? `LinkedIn description: ${companyProfile.description}` : ''
+      ].filter(Boolean).join('\n');
+      research = `## Company (LinkedIn)\n${facts}\n\n${research}`;
+    }
+
+    const companyLogoUrl = (companyProfile && companyProfile.logoUrl) || '';
+
     sendProgress('enrichment', 'Research complete. Building your signal strategy...');
 
-    const { contactId, enrichedPerson, usesHubSpot } = enrichmentResult;
-
-    // Step B2: AI Analysis (depends on BuiltWith result for model selection)
+    // AI Analysis (streamed). Model tier depends on BuiltWith result.
     sendProgress('analysis', usesHubSpot
       ? 'Deploying premium analysis engine...'
       : 'Generating your custom signal strategy...');
@@ -85,10 +105,13 @@ router.post('/analyze', async (req, res) => {
     let analysis;
     try {
       analysis = await anthropic.generateAnalysis({
-        websiteResearch: scrapeResult.raw,
+        websiteResearch: research,
         domain,
         usesHubSpot,
-        enrichedPerson
+        enrichedPerson,
+        linkedinPosts,
+        jobPostings,
+        onDelta: sendDelta
       });
     } catch (err) {
       console.error('Anthropic API error:', err.message);
@@ -98,7 +121,7 @@ router.post('/analyze', async (req, res) => {
 
     sendProgress('saving', 'Finalizing your report...');
 
-    // Store analysis for PDF generation
+    // Store analysis for PDF generation + chat grounding
     const storedAnalysis = {
       id: analysisId,
       email,
@@ -109,6 +132,8 @@ router.post('/analyze', async (req, res) => {
       modelUsed: analysis.modelUsed,
       usesHubSpot,
       enrichedPerson,
+      jobPostingsCount: Array.isArray(jobPostings) ? jobPostings.length : 0,
+      postsCount: Array.isArray(linkedinPosts) ? linkedinPosts.length : 0,
       createdAt: new Date().toISOString()
     };
     analysisStore.set(analysisId, storedAnalysis);
@@ -134,7 +159,9 @@ router.post('/analyze', async (req, res) => {
       sections: analysis.sections,
       modelUsed: analysis.modelUsed,
       domain,
-      usesHubSpot
+      usesHubSpot,
+      companyLogoUrl,
+      person: enrichedPerson ? { firstName: enrichedPerson.firstName || '', title: enrichedPerson.title || '' } : null
     });
 
   } catch (err) {
@@ -146,10 +173,9 @@ router.post('/analyze', async (req, res) => {
 async function runWorkstreamA(email, domain, sendProgress) {
   let contactId = null;
   let enrichedPerson = null;
-  let usesHubSpot = false;
 
-  // Run HubSpot contact search and BuiltWith check in parallel
-  const [existingContact, builtWithResult] = await Promise.all([
+  // Round 1 (parallel): CRM lookup, tech-stack check, LinkedIn profile enrichment.
+  const [existingContact, builtWithResult, linkedinProfile] = await Promise.all([
     hubspot.searchContactByEmail(email).catch(err => {
       console.warn('HubSpot search error:', err.message);
       return null;
@@ -157,25 +183,31 @@ async function runWorkstreamA(email, domain, sendProgress) {
     anysite.checkBuiltWith(domain).catch(err => {
       console.warn('BuiltWith error:', err.message);
       return { usesHubSpot: false, technologies: [] };
-    })
+    }),
+    anysite.enrichPersonByEmail(email).catch(() => null)
   ]);
 
-  usesHubSpot = builtWithResult.usesHubSpot;
+  const usesHubSpot = builtWithResult.usesHubSpot;
+
+  // Merge CRM + LinkedIn data. Prefer known CRM name fields; keep the LinkedIn
+  // URL and headline (the CRM usually lacks them) so we can pull posts.
+  if (existingContact || linkedinProfile) {
+    const cp = existingContact && existingContact.properties ? existingContact.properties : {};
+    enrichedPerson = {
+      firstName: cp.firstname || (linkedinProfile && linkedinProfile.firstName) || '',
+      lastName: cp.lastname || (linkedinProfile && linkedinProfile.lastName) || '',
+      title: cp.jobtitle || (linkedinProfile && linkedinProfile.title) || '',
+      company: cp.company || (linkedinProfile && linkedinProfile.company) || '',
+      linkedinUrl: (linkedinProfile && linkedinProfile.linkedinUrl) || cp.linkedin_url || '',
+      headline: (linkedinProfile && linkedinProfile.headline) || ''
+    };
+  }
 
   if (existingContact) {
     contactId = existingContact.id;
-    enrichedPerson = {
-      firstName: existingContact.properties?.firstname || '',
-      lastName: existingContact.properties?.lastname || '',
-      title: existingContact.properties?.jobtitle || '',
-      company: existingContact.properties?.company || ''
-    };
     sendProgress('crm', 'Found your profile...');
   } else {
-    // Enrich via Anysite then create in HubSpot
     sendProgress('enrichment', 'Researching your competitive landscape...');
-    enrichedPerson = await anysite.enrichPersonByEmail(email).catch(() => null);
-
     const contactProps = { email };
     if (enrichedPerson) {
       if (enrichedPerson.firstName) contactProps.firstname = enrichedPerson.firstName;
@@ -184,7 +216,6 @@ async function runWorkstreamA(email, domain, sendProgress) {
       if (enrichedPerson.company) contactProps.company = enrichedPerson.company;
       if (enrichedPerson.linkedinUrl) contactProps.linkedin_url = enrichedPerson.linkedinUrl;
     }
-
     try {
       const newContact = await hubspot.createContact(contactProps);
       contactId = newContact.id;
@@ -193,10 +224,22 @@ async function runWorkstreamA(email, domain, sendProgress) {
     }
   }
 
-  return { contactId, enrichedPerson, usesHubSpot };
+  // Round 2 (parallel): the reader's recent posts, the company's open jobs, and
+  // the company's LinkedIn profile (logo + facts).
+  sendProgress('signals', 'Reading your public signals...');
+  const company = (enrichedPerson && enrichedPerson.company) || domain;
+  const [linkedinPosts, jobPostings, companyProfile] = await Promise.all([
+    (enrichedPerson && enrichedPerson.linkedinUrl)
+      ? anysite.getLinkedInPosts(enrichedPerson.linkedinUrl, 20).catch(() => [])
+      : Promise.resolve([]),
+    anysite.getCompanyJobs(company, 15).catch(() => []),
+    anysite.getCompanyProfile(company).catch(() => null)
+  ]);
+
+  return { contactId, enrichedPerson, usesHubSpot, linkedinPosts, jobPostings, companyProfile };
 }
 
-// Export the store for the PDF route
+// Export the store for the PDF + chat routes
 router.getAnalysis = (id) => analysisStore.get(id);
 
 module.exports = router;

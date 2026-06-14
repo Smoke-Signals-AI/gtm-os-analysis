@@ -4,8 +4,10 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(express.json());
+// Middleware. Capture the raw body so we can verify Slack request signatures.
+app.use(express.json({
+  verify: (req, res, buf) => { req.rawBody = buf.toString('utf8'); }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // CORS for the domain
@@ -37,13 +39,16 @@ app.get('/health', (req, res) => {
 const analyzeRouter = require('./routes/analyze');
 const pdfRouter = require('./routes/pdf');
 const surveyRouter = require('./routes/survey');
+const chatRouter = require('./routes/chat');
 
-// Wire up the analysis store to the PDF router
+// Wire up the analysis store to the PDF + chat routers
 pdfRouter.setAnalysisStore(analyzeRouter.getAnalysis);
+chatRouter.setAnalysisStore(analyzeRouter.getAnalysis);
 
 app.use('/api', analyzeRouter);
 app.use('/api', pdfRouter);
 app.use('/api', surveyRouter);
+app.use('/api', chatRouter);
 
 // Serve index.html for all other routes
 app.get('*', (req, res) => {

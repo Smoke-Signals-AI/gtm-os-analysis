@@ -29,10 +29,37 @@
   const surveyThanks = document.getElementById('surveyThanks');
   const surveySection = document.getElementById('surveySection');
 
+  // Loading / signal-lifecycle elements
+  const signalPrinciple = document.getElementById('signalPrinciple');
+  const lifecycle = document.getElementById('lifecycle');
+  const streamPanel = document.getElementById('streamPanel');
+  const streamTranscript = document.getElementById('streamTranscript');
+
+  // Chat widget elements
+  const chatWidget = document.getElementById('chatWidget');
+  const chatLauncher = document.getElementById('chatLauncher');
+  const chatPanel = document.getElementById('chatPanel');
+  const chatClose = document.getElementById('chatClose');
+  const chatMessages = document.getElementById('chatMessages');
+  const chatForm = document.getElementById('chatForm');
+  const chatInput = document.getElementById('chatInput');
+
   // State
   let currentAnalysisId = null;
   let currentEmail = null;
+  let currentPerson = null;
   let progressPercent = 0;
+
+  // Streaming + loading state
+  let accumulatedText = '';
+  let streamRenderQueued = false;
+  let principleTimer = null;
+  let streamingStarted = false;
+
+  // Chat state
+  let chatPollTimer = null;
+  let lastChatTs = 0;
+  let chatStarted = false;
 
   // ---------- Screen Management ----------
   function showScreen(screen) {
@@ -45,21 +72,45 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  // ---------- Loading Progress ----------
+  // ---------- Loading: Signal Lifecycle ----------
+  // Lines drawn from the Smoke Signals manifesto. No exclamation points, no em dashes.
+  const MANIFESTO_LINES = [
+    'If it does not start at signal creation, it is not a motion. It is noise.',
+    'Intent data is dead. Alpha signals are not.',
+    'Tools masquerading as strategy is the problem. Orchestration is the answer.',
+    'We detect buying intent before your competitors can see it.',
+    'Signal, then capture, then activation. In that order.'
+  ];
+
+  // Each backend stage maps to a lifecycle phase, a status line, and the manifesto reason behind it.
   const statusMessages = {
-    start: { text: 'Starting your analysis...', sub: 'Setting up your GTM intelligence report', pct: 5 },
-    research: { text: 'Analyzing your website...', sub: 'Scanning pages, extracting positioning and market signals', pct: 20 },
-    enrichment: { text: 'Researching your competitive landscape...', sub: 'Cross-referencing industry data and tech stack signals', pct: 40 },
-    crm: { text: 'Building your profile...', sub: 'Pulling existing intelligence from our systems', pct: 45 },
-    analysis: { text: 'Building your custom signal strategy...', sub: 'Our AI is designing a unique alpha signal for your company', pct: 60 },
-    saving: { text: 'Finalizing your report...', sub: 'Formatting your GTM intelligence report', pct: 90 }
+    start:      { text: 'Tuning in to your market', sub: 'Reading the smoke before anyone else can', phase: 'creation', pct: 8 },
+    research:   { text: 'Reading the market', sub: 'Scanning your site for positioning and gaps', phase: 'creation', pct: 22 },
+    crm:        { text: 'Found your profile', sub: 'Pulling what we already know about you', phase: 'creation', pct: 32 },
+    enrichment: { text: 'Mapping the landscape', sub: 'Cross-referencing your tech stack and competitors', phase: 'creation', pct: 42 },
+    signals:    { text: 'Reading your public signals', sub: 'Your posts and open roles are buying signals', phase: 'creation', pct: 54 },
+    analysis:   { text: 'Creating your alpha signal', sub: 'Designing an indicator your competitors are not watching', phase: 'capture', pct: 68 },
+    saving:     { text: 'Activating across channels', sub: 'Outbound, content, and LinkedIn, working as one system', phase: 'activation', pct: 94 }
   };
+
+  const PHASE_ORDER = ['creation', 'capture', 'activation'];
+
+  function setPhase(phase) {
+    if (!lifecycle) return;
+    const idx = PHASE_ORDER.indexOf(phase);
+    lifecycle.querySelectorAll('.phase').forEach(function (el) {
+      const p = PHASE_ORDER.indexOf(el.getAttribute('data-phase'));
+      el.classList.toggle('active', p === idx);
+      el.classList.toggle('done', p < idx);
+    });
+  }
 
   function updateProgress(stage, message) {
     const preset = statusMessages[stage];
     if (preset) {
       loadingStatus.textContent = preset.text;
       loadingSubstatus.textContent = preset.sub;
+      if (preset.phase) setPhase(preset.phase);
       animateProgress(preset.pct);
     } else if (message) {
       loadingStatus.textContent = message;
@@ -69,6 +120,48 @@
   function animateProgress(target) {
     progressPercent = target;
     loadingBar.style.width = target + '%';
+  }
+
+  function startPrincipleRotation() {
+    if (!signalPrinciple) return;
+    stopPrincipleRotation();
+    let i = 0;
+    principleTimer = setInterval(function () {
+      i = (i + 1) % MANIFESTO_LINES.length;
+      signalPrinciple.style.opacity = '0';
+      setTimeout(function () {
+        signalPrinciple.textContent = MANIFESTO_LINES[i];
+        signalPrinciple.style.opacity = '1';
+      }, 400);
+    }, 4200);
+  }
+
+  function stopPrincipleRotation() {
+    if (principleTimer) { clearInterval(principleTimer); principleTimer = null; }
+  }
+
+  // ---------- Streaming transcript ----------
+  function onStreamDelta(text) {
+    if (!streamingStarted) {
+      streamingStarted = true;
+      if (streamPanel) streamPanel.hidden = false;
+      if (surveySection) surveySection.classList.add('dimmed');
+      setPhase('capture');
+    }
+    accumulatedText += text;
+    if (!streamRenderQueued) {
+      streamRenderQueued = true;
+      requestAnimationFrame(flushTranscript);
+    }
+  }
+
+  function flushTranscript() {
+    streamRenderQueued = false;
+    if (!streamTranscript) return;
+    // Hide the micro-app JSON spec from the human-facing transcript.
+    const cleaned = accumulatedText.replace(/```microapp[\s\S]*?(```|$)/g, '');
+    streamTranscript.innerHTML = formatMarkdown(cleaned);
+    streamTranscript.scrollTop = streamTranscript.scrollHeight;
   }
 
   // ---------- Survey ----------
@@ -158,6 +251,17 @@
     currentEmail = email;
     submitBtn.disabled = true;
     submitBtn.textContent = 'Starting...';
+
+    // Reset loading + streaming state
+    accumulatedText = '';
+    streamingStarted = false;
+    if (streamPanel) streamPanel.hidden = true;
+    if (streamTranscript) streamTranscript.innerHTML = '';
+    if (surveySection) surveySection.classList.remove('dimmed');
+    setPhase('creation');
+    if (signalPrinciple) signalPrinciple.textContent = MANIFESTO_LINES[0];
+    startPrincipleRotation();
+
     showScreen(loadingScreen);
     progressPercent = 0;
     loadingBar.style.width = '0%';
@@ -204,6 +308,8 @@
 
           if (event.type === 'progress') {
             updateProgress(event.stage, event.message);
+          } else if (event.type === 'delta') {
+            onStreamDelta(event.text || '');
           } else if (event.type === 'result') {
             animateProgress(100);
             setTimeout(() => renderResults(event.data), 400);
@@ -222,14 +328,16 @@
 
   // ---------- Results Rendering ----------
   function renderResults(data) {
+    stopPrincipleRotation();
+    setPhase('activation');
     currentAnalysisId = data.analysisId;
+    currentPerson = data.person || null;
 
     const domain = data.domain || 'Your Company';
     resultsDomain.textContent = domain;
 
-    // Company logo via Clearbit
-    companyLogo.src = 'https://logo.clearbit.com/' + domain;
-    companyLogo.onerror = function () { this.style.display = 'none'; };
+    // Company logo: prefer the LinkedIn logo from Anysite, fall back to Clearbit, then hide.
+    setCompanyLogo(data.companyLogoUrl, domain);
 
     // Render sections
     renderSection('section1Body', data.sections.icpProfile);
@@ -240,8 +348,29 @@
 
     showScreen(resultsScreen);
 
-    // Setup sidebar scroll tracking
+    // Setup sidebar scroll tracking + concierge chat
     setupSidebarNav();
+    setupChat();
+  }
+
+  function setCompanyLogo(url, domain) {
+    if (!companyLogo) return;
+    companyLogo.style.display = '';
+    let triedClearbit = false;
+    companyLogo.onerror = function () {
+      if (!triedClearbit) {
+        triedClearbit = true;
+        this.src = 'https://logo.clearbit.com/' + domain;
+      } else {
+        this.style.display = 'none';
+      }
+    };
+    if (url) {
+      companyLogo.src = url;
+    } else {
+      triedClearbit = true;
+      companyLogo.src = 'https://logo.clearbit.com/' + domain;
+    }
   }
 
   function renderSection(elementId, content) {
@@ -390,21 +519,25 @@
     });
   }
 
+  // Deterministic scoring driven by the visitor's actual inputs and the model's
+  // scoring spec. The same answers always produce the same score. No randomness.
   function generateMicroAppResults(resultsEl, spec) {
-    const metrics = spec.resultMetrics || [];
-    const totalScore = Math.floor(Math.random() * 30) + 45; // 45-75 range
+    const scored = computeMicroAppScores(spec);
+    const totalScore = scored.overall;
 
     let html = '<h4>' + escapeHtml(spec.resultTitle || 'Your Results') + '</h4>';
     html += '<div class="micro-app-score"><div class="score-circle">' + totalScore + '</div><div class="score-label">out of 100</div></div>';
 
-    metrics.forEach(function (m) {
-      const score = Math.floor(Math.random() * 40) + 35; // 35-75
-      const color = score >= 65 ? 'green' : score >= 45 ? 'yellow' : 'red';
+    scored.metrics.forEach(function (m) {
+      const color = m.score >= 65 ? 'green' : m.score >= 45 ? 'yellow' : 'red';
       html += '<div class="metric-bar">' +
         '<span class="metric-bar-label">' + escapeHtml(m.label) + '</span>' +
-        '<div class="metric-bar-track"><div class="metric-bar-fill ' + color + '" style="width:' + score + '%"></div></div>' +
-        '<span class="metric-bar-val">' + score + '</span>' +
+        '<div class="metric-bar-track"><div class="metric-bar-fill ' + color + '" style="width:' + m.score + '%"></div></div>' +
+        '<span class="metric-bar-val">' + m.score + '</span>' +
         '</div>';
+      if (m.description) {
+        html += '<p class="metric-bar-desc">' + escapeHtml(m.description) + '</p>';
+      }
     });
 
     if (spec.benchmark) {
@@ -414,6 +547,76 @@
     resultsEl.innerHTML = html;
     resultsEl.classList.add('visible');
     resultsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function clampScore(n) { return Math.max(0, Math.min(100, Math.round(n))); }
+
+  function readMicroInputValue(input) {
+    if (input.type === 'yesno') {
+      const sel = document.querySelector('.yesno-btn.selected[data-field="' + input.id + '"]');
+      return sel ? sel.dataset.value : null;
+    }
+    const el = document.getElementById('ma-' + input.id);
+    if (!el) return null;
+    return el.value;
+  }
+
+  function scoreSingleInput(input) {
+    const val = readMicroInputValue(input);
+    if (val === null || val === '' || typeof val === 'undefined') return null;
+    if (input.type === 'select') {
+      if (input.scores && typeof input.scores[val] === 'number') return clampScore(input.scores[val]);
+      return null;
+    }
+    if (input.type === 'range') {
+      const min = Number(input.min || 0), max = Number(input.max || 100);
+      if (max === min) return null;
+      let pct = ((Number(val) - min) / (max - min)) * 100;
+      if (input.scoreDirection === 'lower') pct = 100 - pct;
+      return clampScore(pct);
+    }
+    if (input.type === 'yesno') {
+      if (input.score && typeof input.score[val] === 'number') return clampScore(input.score[val]);
+      return val === 'yes' ? 100 : 30;
+    }
+    return null; // text inputs are context only
+  }
+
+  function computeMicroAppScores(spec) {
+    const inputs = spec.inputs || [];
+    const byId = {};
+    inputs.forEach(function (i) { byId[i.id] = i; });
+
+    const scoredIds = inputs.filter(function (x) { return x.type !== 'text'; }).map(function (x) { return x.id; });
+
+    // Prefer the model's metric groupings; fall back to legacy resultMetrics, then one metric.
+    let metricDefs;
+    if (spec.scoring && Array.isArray(spec.scoring.metrics) && spec.scoring.metrics.length) {
+      metricDefs = spec.scoring.metrics;
+    } else if (Array.isArray(spec.resultMetrics) && spec.resultMetrics.length) {
+      metricDefs = spec.resultMetrics.map(function (m) {
+        return { label: m.label, description: m.description, inputs: scoredIds };
+      });
+    } else {
+      metricDefs = [{ label: 'Signal Strength', description: '', inputs: scoredIds }];
+    }
+
+    const metrics = metricDefs.map(function (m) {
+      const vals = [];
+      (m.inputs || []).forEach(function (id) {
+        const inp = byId[id];
+        if (!inp) return;
+        const s = scoreSingleInput(inp);
+        if (s !== null) vals.push(s);
+      });
+      const score = vals.length ? Math.round(vals.reduce(function (a, b) { return a + b; }, 0) / vals.length) : 50;
+      return { label: m.label || 'Metric', description: m.description || '', score: score };
+    });
+
+    const overallVals = metrics.map(function (m) { return m.score; });
+    const overall = overallVals.length ? Math.round(overallVals.reduce(function (a, b) { return a + b; }, 0) / overallVals.length) : 50;
+
+    return { overall: overall, metrics: metrics };
   }
 
   // ---------- Sequence Visualization ----------
@@ -640,6 +843,7 @@
 
   // ---------- Error Handling ----------
   function showError(message) {
+    stopPrincipleRotation();
     errorMessage.textContent = message;
     showScreen(errorScreen);
     submitBtn.disabled = false;
@@ -651,5 +855,117 @@
     submitBtn.disabled = false;
     submitBtn.textContent = 'Generate Your Analysis';
   });
+
+  // ---------- Concierge Chat (AI + Slack handoff) ----------
+  function setupChat() {
+    if (!chatWidget || !currentAnalysisId) return;
+    chatWidget.hidden = false;
+
+    if (!chatStarted) {
+      chatStarted = true;
+      chatLauncher.addEventListener('click', toggleChat);
+      chatClose.addEventListener('click', toggleChat);
+      chatForm.addEventListener('submit', onChatSubmit);
+
+      const name = currentPerson && currentPerson.firstName ? currentPerson.firstName : '';
+      addChatMessage('assistant', (name ? name + ', ' : '') + 'this report is a sample of what we build. Ask me anything about your alpha signal, the sequence, or how a signal-based program would run for you.');
+    }
+  }
+
+  function toggleChat() {
+    const opening = chatPanel.hidden;
+    chatPanel.hidden = !opening;
+    chatWidget.classList.toggle('open', opening);
+    if (opening) {
+      chatWidget.classList.remove('has-unread');
+      chatInput.focus();
+      startChatPolling();
+    } else {
+      stopChatPolling();
+    }
+  }
+
+  function onChatSubmit(e) {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text || !currentAnalysisId) return;
+    chatInput.value = '';
+    addChatMessage('visitor', text);
+    const typing = addTyping();
+
+    fetch('/api/chat/' + currentAnalysisId + '/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        removeTyping(typing);
+        if (data.reply) {
+          addChatMessage('assistant', data.reply);
+          if (data.ts) lastChatTs = Math.max(lastChatTs, data.ts);
+        } else if (data.error) {
+          addChatMessage('assistant', data.error);
+        }
+        startChatPolling();
+      })
+      .catch(function () {
+        removeTyping(typing);
+        addChatMessage('assistant', 'Something went wrong sending that. The team has been pinged and will follow up.');
+      });
+  }
+
+  function addChatMessage(role, text) {
+    const el = document.createElement('div');
+    el.className = 'chat-msg chat-msg-' + role;
+    if (role === 'team') {
+      el.innerHTML = '<span class="chat-msg-tag">Smoke Signals team</span>';
+      const body = document.createElement('span');
+      body.textContent = text;
+      el.appendChild(body);
+    } else {
+      el.textContent = text;
+    }
+    chatMessages.appendChild(el);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function addTyping() {
+    const el = document.createElement('div');
+    el.className = 'chat-msg chat-msg-assistant chat-typing';
+    el.innerHTML = '<span></span><span></span><span></span>';
+    chatMessages.appendChild(el);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return el;
+  }
+
+  function removeTyping(el) { if (el && el.parentNode) el.parentNode.removeChild(el); }
+
+  function startChatPolling() {
+    stopChatPolling();
+    chatPollTimer = setInterval(pollChat, 4000);
+  }
+
+  function stopChatPolling() {
+    if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+  }
+
+  // Poll for team replies that arrived from Slack. AI replies are shown inline on
+  // send, so we only surface 'team' messages here.
+  function pollChat() {
+    if (!currentAnalysisId) return;
+    fetch('/api/chat/' + currentAnalysisId + '/messages?since=' + lastChatTs)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        (data.messages || []).forEach(function (m) {
+          if (m.ts > lastChatTs) lastChatTs = m.ts;
+          if (m.role === 'team') {
+            addChatMessage('team', m.text);
+            if (chatPanel.hidden) chatWidget.classList.add('has-unread');
+          }
+        });
+      })
+      .catch(function () {});
+  }
 
 })();
