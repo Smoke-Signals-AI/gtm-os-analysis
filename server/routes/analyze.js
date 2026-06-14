@@ -10,6 +10,32 @@ const store = require('../utils/store');
 
 const router = express.Router();
 
+// Conservatively derive a first name from an email local-part for light
+// personalization. Returns '' for role/generic inboxes or anything that does
+// not clearly look like a person's name, so we never greet "Info" or "Sales".
+const ROLE_LOCALPARTS = new Set([
+  'info', 'sales', 'hello', 'hi', 'hey', 'team', 'support', 'contact', 'admin',
+  'marketing', 'careers', 'jobs', 'press', 'media', 'help', 'billing', 'accounts',
+  'account', 'noreply', 'no-reply', 'donotreply', 'do-not-reply', 'office', 'mail',
+  'inbox', 'gtm', 'growth', 'revops', 'founders', 'founder', 'ceo', 'ar', 'ap',
+  'legal', 'hr', 'it', 'dev', 'eng', 'engineering', 'partnerships', 'partners',
+  'events', 'community', 'newsletter', 'notifications', 'security', 'privacy',
+  'abuse', 'postmaster', 'webmaster', 'enquiries', 'inquiries', 'ask', 'connect',
+  'general', 'main', 'service', 'services', 'order', 'orders', 'feedback', 'demo',
+  'book', 'meet', 'biz', 'business', 'welcome', 'signup', 'subscribe'
+]);
+
+function guessFirstNameFromEmail(email) {
+  if (!email || typeof email !== 'string') return '';
+  let local = email.split('@')[0].toLowerCase().trim();
+  local = local.split('+')[0]; // strip +tag
+  if (!local || ROLE_LOCALPARTS.has(local)) return '';
+  const first = local.split(/[._\-]+/).filter(Boolean)[0] || '';
+  if (ROLE_LOCALPARTS.has(first)) return '';
+  if (!/^[a-z]{2,12}$/.test(first)) return ''; // must read like a name, not an initial or handle
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
 // Analyses are persisted via the store (Redis when REDIS_URL is set, else an
 // in-process Map). Used for PDF retrieval and chat grounding.
 const analysisKey = (id) => `analysis:${id}`;
@@ -79,7 +105,19 @@ router.post('/analyze', async (req, res) => {
       })
     ]);
 
-    const { contactId, enrichedPerson, linkedinPosts, jobPostings, companyProfile } = enrichmentResult;
+    const { contactId, linkedinPosts, jobPostings, companyProfile } = enrichmentResult;
+    let enrichedPerson = enrichmentResult.enrichedPerson;
+
+    // If enrichment yielded no first name, conservatively guess one from the
+    // email local-part. Skips role/generic inboxes (info@, sales@, ...).
+    if (!enrichedPerson || !enrichedPerson.firstName) {
+      const guessed = guessFirstNameFromEmail(email);
+      if (guessed) {
+        enrichedPerson = Object.assign({}, enrichedPerson, { firstName: guessed });
+        console.log('[gtmos] guessed first name from email local-part:', guessed);
+      }
+    }
+
     // Tier off HubSpot detected in the site source (the BuiltWith endpoint is gone).
     const usesHubSpot = Boolean(scrapeResult.usesHubSpot);
     console.log('[gtmos] summary:', { usesHubSpot, posts: Array.isArray(linkedinPosts) ? linkedinPosts.length : 0, jobs: Array.isArray(jobPostings) ? jobPostings.length : 0, company: (companyProfile && companyProfile.name) || 'none', logo: !!(companyProfile && companyProfile.logoUrl) });
