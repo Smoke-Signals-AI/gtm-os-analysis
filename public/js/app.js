@@ -165,18 +165,27 @@
 
   // ---------- Survey ----------
   function setupSurvey() {
-    const checkboxes = surveySection.querySelectorAll('input[type="checkbox"]');
-    checkboxes.forEach(cb => {
-      cb.addEventListener('change', () => {
-        const anyChecked = surveySection.querySelector('input[type="checkbox"]:checked');
-        surveySubmitBtn.disabled = !anyChecked;
+    let surveyDone = false;
+
+    // Drive selection in JS so it never depends on native label/checkbox quirks
+    // or CSS stacking. Clicking a chip toggles its checkbox and a .selected class.
+    surveySection.querySelectorAll('.chip').forEach(function (chip) {
+      const cb = chip.querySelector('input[type="checkbox"]');
+      if (!cb) return;
+      chip.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (surveyDone) return;
+        cb.checked = !cb.checked;
+        chip.classList.toggle('selected', cb.checked);
+        surveySubmitBtn.disabled = !surveySection.querySelector('input[type="checkbox"]:checked');
       });
     });
 
     surveySubmitBtn.addEventListener('click', async () => {
-      const tools = Array.from(document.querySelectorAll('input[name="tools"]:checked')).map(c => c.value);
-      const capture = Array.from(document.querySelectorAll('input[name="capture"]:checked')).map(c => c.value);
+      const tools = Array.from(surveySection.querySelectorAll('input[name="tools"]:checked')).map(c => c.value);
+      const capture = Array.from(surveySection.querySelectorAll('input[name="capture"]:checked')).map(c => c.value);
 
+      surveyDone = true;
       surveySubmitBtn.disabled = true;
       surveySubmitBtn.textContent = 'Submitting...';
 
@@ -192,9 +201,6 @@
 
       surveySubmitBtn.style.display = 'none';
       surveyThanks.style.display = 'block';
-
-      // Disable all checkboxes
-      checkboxes.forEach(cb => { cb.disabled = true; });
     });
   }
 
