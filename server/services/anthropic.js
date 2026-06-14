@@ -20,7 +20,7 @@ const MODELS = {
 // arrive so the frontend can render the report progressively. The model and
 // total token count are unchanged versus a blocking call, but the reader sees
 // content within seconds instead of staring at a bar for 60-90s.
-async function generateAnalysis({ websiteResearch, domain, usesHubSpot, enrichedPerson, linkedinPosts, jobPostings, onDelta }) {
+async function generateAnalysis({ websiteResearch, domain, usesHubSpot, enrichedPerson, linkedinPosts, jobPostings, decisionMakers, onDelta }) {
   const tier = usesHubSpot ? MODELS.premium : MODELS.standard;
 
   const { systemPrompt, userPrompt } = getAnalysisPrompt({
@@ -28,7 +28,8 @@ async function generateAnalysis({ websiteResearch, domain, usesHubSpot, enriched
     domain,
     enrichedPerson,
     linkedinPosts,
-    jobPostings
+    jobPostings,
+    decisionMakers
   });
 
   const anthropic = getClient();

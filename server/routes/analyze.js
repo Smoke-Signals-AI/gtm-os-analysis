@@ -105,7 +105,7 @@ router.post('/analyze', async (req, res) => {
       })
     ]);
 
-    const { contactId, linkedinPosts, jobPostings, companyProfile } = enrichmentResult;
+    const { contactId, linkedinPosts, jobPostings, companyProfile, decisionMakers } = enrichmentResult;
     let enrichedPerson = enrichmentResult.enrichedPerson;
 
     // If enrichment yielded no first name, conservatively guess one from the
@@ -120,7 +120,8 @@ router.post('/analyze', async (req, res) => {
 
     // Tier off HubSpot detected in the site source (the BuiltWith endpoint is gone).
     const usesHubSpot = Boolean(scrapeResult.usesHubSpot);
-    console.log('[gtmos] summary:', { usesHubSpot, posts: Array.isArray(linkedinPosts) ? linkedinPosts.length : 0, jobs: Array.isArray(jobPostings) ? jobPostings.length : 0, company: (companyProfile && companyProfile.name) || 'none', logo: !!(companyProfile && companyProfile.logoUrl) });
+    const execPostCount = Array.isArray(decisionMakers) ? decisionMakers.reduce((n, d) => n + (Array.isArray(d.posts) ? d.posts.length : 0), 0) : 0;
+    console.log('[gtmos] summary:', { usesHubSpot, posts: Array.isArray(linkedinPosts) ? linkedinPosts.length : 0, jobs: Array.isArray(jobPostings) ? jobPostings.length : 0, company: (companyProfile && companyProfile.name) || 'none', logo: !!(companyProfile && companyProfile.logoUrl), decisionMakers: Array.isArray(decisionMakers) ? decisionMakers.length : 0, execPosts: execPostCount });
 
     // Fold LinkedIn company facts into the research so the model has them too.
     let research = scrapeResult.raw;
@@ -153,6 +154,7 @@ router.post('/analyze', async (req, res) => {
         enrichedPerson,
         linkedinPosts,
         jobPostings,
+        decisionMakers,
         onDelta: sendDelta
       });
     } catch (err) {
@@ -306,13 +308,25 @@ async function runWorkstreamA(email, domain, sendProgress) {
     };
   }
 
-  // Round 3: job search needs a company URN.
   const companyUrn = (companyProfile && companyProfile.urn) || (resolvedCompany && resolvedCompany.urn) || (enrichedPerson && enrichedPerson.companyUrn) || '';
-  const jobPostings = companyUrn
-    ? await anysite.getCompanyJobs(companyUrn, 15).catch(() => [])
-    : [];
+  const companyName = (companyProfile && companyProfile.name) || (resolvedCompany && resolvedCompany.name) || '';
 
-  return { contactId, enrichedPerson, linkedinPosts, jobPostings, companyProfile };
+  // Round 3 (parallel): open jobs + the company's buying committee.
+  const [jobPostings, execs] = await Promise.all([
+    companyUrn ? anysite.getCompanyJobs(companyUrn, 15).catch(() => []) : Promise.resolve([]),
+    (companyUrn || companyName) ? anysite.getCompanyDecisionMakers(companyUrn, companyName, 12).catch(() => []) : Promise.resolve([])
+  ]);
+
+  // Round 4: recent posts for the top few decision-makers (dedup the reader).
+  const readerUrn = enrichedPerson && enrichedPerson.profileUrn;
+  const topExecs = execs.filter(e => e.profileUrn && e.profileUrn !== readerUrn).slice(0, 3);
+  const decisionMakers = await Promise.all(topExecs.map(async (e) => ({
+    name: e.name,
+    headline: e.headline,
+    posts: await anysite.getLinkedInPosts(e.profileUrn, 10).catch(() => [])
+  })));
+
+  return { contactId, enrichedPerson, linkedinPosts, jobPostings, companyProfile, decisionMakers };
 }
 
 // Fetch a stored analysis for rendering (used by the "Open their report"

@@ -37,6 +37,7 @@ Voice (this is the line between sharp and AI slop, treat it as non-negotiable):
 Using the evidence you are given:
 - You may be given the reader's recent LinkedIn posts and their company's open job postings. These are gold. Use them.
 - The reader's posts are only useful when they reveal a relevant pain or need. Quote a post ONLY when it touches one of these themes: lead generation, pipeline, revenue pressure, weak results from AI SDRs or outbound tools, questions or skepticism about buying signals, account-based marketing, personalization, or message relevance. A quote like that proves the reader already feels the problem this report solves, so use it to show they need a signal-based program. Reference it directly ("You wrote that ...", "In your post on X you said ..."). Ignore off-topic, promotional, or unrelated posts entirely. If no post fits these themes, do not quote at all. Never force a quote to seem personalized, a random quote is worse than none.
+- You will usually also receive recent posts from the company's decision-makers (the buying committee: CEO, CRO, CMO, VP Sales, VP Marketing, RevOps). The same curation rule applies, quote only pain-relevant posts. The buying committee's own words are often your strongest evidence, since they are the people who would approve a Smoke Signals engagement, and they make the report robust even when the reader has posted nothing useful. Attribute every quote to the person and their role ("Your CMO, Jane Doe, recently wrote that ..."). Never fabricate a quote or a name.
 - Open job postings are buying signals. Hiring three SDRs, a "Head of Growth", or a "RevOps lead" tells you what they are betting on and where the gaps are. Tie the roles to the strategy.
 - Never fabricate a quote, a post, or a job. If the evidence is thin or missing, lean on the website research instead. Do not say "I could not find your posts." Just proceed.
 - Address the reader by first name once, naturally, if you know it. Do not overuse it.
@@ -204,13 +205,14 @@ Hook: "[opening line that promises a look under the hood]"
 
 No hashtags. Write for organic reach. Where a real post or job posting from the reader supports an angle, build the post around it.`;
 
-function getAnalysisPrompt({ websiteResearch, domain, enrichedPerson, linkedinPosts, jobPostings }) {
+function getAnalysisPrompt({ websiteResearch, domain, enrichedPerson, linkedinPosts, jobPostings, decisionMakers }) {
   const personContext = enrichedPerson && (enrichedPerson.firstName || enrichedPerson.title || enrichedPerson.company)
     ? `Reader: ${[enrichedPerson.firstName, enrichedPerson.lastName].filter(Boolean).join(' ') || 'unknown name'}, ${enrichedPerson.title || 'unknown role'} at ${enrichedPerson.company || domain}.${enrichedPerson.headline ? ` LinkedIn headline: "${enrichedPerson.headline}".` : ''}`
     : 'Reader: identity unknown. Do not invent a name.';
 
   const postsBlock = formatPosts(linkedinPosts);
   const jobsBlock = formatJobs(jobPostings);
+  const dmBlock = formatDecisionMakers(decisionMakers);
 
   const userPrompt = `Analyze the following company and produce the five-section GTM intelligence report defined in your instructions.
 
@@ -223,10 +225,13 @@ ${websiteResearch}
 === READER'S RECENT LINKEDIN POSTS ===
 ${postsBlock}
 
+=== COMPANY DECISION-MAKERS (BUYING COMMITTEE) AND THEIR RECENT POSTS ===
+${dmBlock}
+
 === COMPANY'S OPEN JOB POSTINGS ===
 ${jobsBlock}
 
-Remember: weave the LinkedIn posts and job postings into the analysis as specific evidence wherever they support a point. Lead with value, prove you see their market clearly, and make the call feel like the obvious next step. Begin with "## Section 1: ICP Profile".`;
+Remember: weave the reader's posts, the buying committee's posts, and the job postings into the analysis as specific evidence wherever they support a point. Quoting a named decision-maker by role ("Your CMO, Jane Doe, wrote that ...") is powerful proof the buying team needs this. Lead with value, prove you see their market clearly, and make the call feel like the obvious next step. Begin with "## Section 1: ICP Profile".`;
 
   return { systemPrompt: SYSTEM_PROMPT, userPrompt };
 }
@@ -252,6 +257,20 @@ function formatJobs(jobs) {
     if (j.location) parts.push(j.location);
     return `- ${parts.join(' — ').replace(/—/g, ',')}`;
   }).join('\n');
+}
+
+function formatDecisionMakers(dms) {
+  if (!Array.isArray(dms) || dms.length === 0) {
+    return '(No decision-maker posts retrieved. Lean on website research and job postings instead.)';
+  }
+  return dms.map((dm) => {
+    const head = `${dm.name || 'Unknown'}${dm.headline ? ', ' + dm.headline : ''}`;
+    const posts = (dm.posts || []).slice(0, 6).map((p) => {
+      const t = (p.text || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+      return t ? `  - "${t}"${p.date ? ' (' + p.date + ')' : ''}` : null;
+    }).filter(Boolean).join('\n');
+    return head + (posts ? '\n' + posts : '\n  (no readable recent posts)');
+  }).join('\n\n');
 }
 
 // ----- Chat concierge -----
