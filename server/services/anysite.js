@@ -297,7 +297,7 @@ async function getCompanyProfile(identifier) {
 // Open jobs for a company. POST /api/linkedin/search/jobs { company, count }
 // where company is a company URN (from getCompanyProfile.urn).
 async function getCompanyJobs(companyUrn, count = 15) {
-  const urn = urnString(companyUrn);
+  const urn = toCompanyUrn(companyUrn);
   if (!urn) { console.log('[gtmos] getCompanyJobs: no company URN, skipping'); return []; }
 
   const cacheKey = `jobs:${urn}`;
@@ -328,6 +328,79 @@ async function getCompanyJobs(companyUrn, count = 15) {
   }
 }
 
+// Job search and company/employees require the "company:{id}" URN form, not the
+// "fsd_company:{id}" form the company profile returns. Extract the numeric id.
+function toCompanyUrn(urn) {
+  const s = urnString(urn);
+  if (!s) return '';
+  const m = s.match(/(\d{4,})/);
+  return m ? 'company:' + m[1] : s;
+}
+
+const DECISION_MAKER_TITLES = [
+  'CEO', 'Founder', 'Co-Founder', 'Chief Revenue Officer', 'CRO',
+  'Chief Marketing Officer', 'CMO', 'VP Marketing', 'VP of Marketing',
+  'VP Sales', 'VP of Sales', 'VP Revenue', 'Head of Growth', 'Head of Marketing',
+  'Head of Sales', 'Head of Revenue', 'Revenue Operations', 'RevOps', 'Demand Generation'
+];
+
+function isDecisionMaker(headline) {
+  return /\b(ceo|founder|chief revenue|cro|chief marketing|cmo|vp\s*(of\s*)?(marketing|sales|revenue|growth|demand)|head of (growth|marketing|sales|revenue|demand)|revenue operations|revops|demand gen)/i
+    .test(headline || '');
+}
+
+function mapPerson(u) {
+  return { name: u.name || '', headline: u.headline || '', profileUrn: urnString(u.urn || u.internal_id), url: u.url || '' };
+}
+
+// Find the company's buying committee: people whose current title is CEO / CRO /
+// CMO / VP Sales|Marketing / RevOps etc. at the company. Tries a title-filtered
+// Sales-Nav search, then falls back to listing employees and filtering by title.
+async function getCompanyDecisionMakers(rawCompanyUrn, companyName, count = 12) {
+  const companyUrn = toCompanyUrn(rawCompanyUrn);
+  const idForCache = companyUrn || companyName;
+  if (!idForCache) return [];
+  const cacheKey = `dm:${String(idForCache).toLowerCase()}`;
+  const cached = cache.get(cacheKey);
+  if (cached !== null) return cached;
+
+  let people = [];
+
+  // 1) Title-filtered search (most precise).
+  try {
+    const data = await anysiteFetch('/api/linkedin/sn_search/users', {
+      method: 'POST',
+      body: JSON.stringify({ current_companies: companyUrn || companyName, current_titles: DECISION_MAKER_TITLES, count, timeout: 300 })
+    });
+    const arr = Array.isArray(data) ? data : (data.results || data.data || []);
+    people = (Array.isArray(arr) ? arr : []).map(mapPerson).filter(p => p.profileUrn);
+  } catch (err) {
+    console.warn('[gtmos] sn_search decision-makers failed:', err.message);
+  }
+
+  // 2) Fallback: list employees, keep the decision-makers by headline.
+  if (!people.length && companyUrn) {
+    try {
+      const data = await anysiteFetch('/api/linkedin/company/employees', {
+        method: 'POST',
+        body: JSON.stringify({ companies: [companyUrn], count: 25, timeout: 300 })
+      });
+      const arr = Array.isArray(data) ? data : (data.results || data.data || []);
+      people = (Array.isArray(arr) ? arr : []).map(mapPerson).filter(p => p.profileUrn && isDecisionMaker(p.headline));
+    } catch (err) {
+      console.warn('[gtmos] employees decision-makers failed:', err.message);
+    }
+  }
+
+  console.log('[gtmos] getCompanyDecisionMakers:', {
+    company: String(idForCache).slice(0, 40),
+    found: people.length,
+    names: people.slice(0, 6).map(p => `${p.name} / ${(p.headline || '').slice(0, 30)}`)
+  });
+  cache.set(cacheKey, people);
+  return people;
+}
+
 module.exports = {
   enrichPersonByEmail,
   searchPerson,
@@ -335,5 +408,6 @@ module.exports = {
   getLinkedInPosts,
   getCompanyProfile,
   getCompanyJobs,
+  getCompanyDecisionMakers,
   urnString
 };
