@@ -159,6 +159,7 @@ function buildPdfHtml(analysisData) {
 
   .section-body li { margin-bottom: 4px; }
   .section-body strong { color: #1A1A1A; }
+  .section-body a { color: #E85D50; text-decoration: underline; }
 
   .section-body blockquote {
     border-left: 3px solid #E85D50;
@@ -218,28 +219,31 @@ function formatContentForPdf(content) {
   // Remove section header lines
   content = content.replace(/^##\s*Section\s*\d+[:\s].*$/gm, '');
 
+  // Inline formatting: links (quote -> source post) then bold. Runs on already
+  // HTML-escaped text, so [text](url) survives and the url's & is &amp; (valid).
+  const inline = (s) => s
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
   return content
     .split('\n')
     .map(line => {
       line = escapeHtml(line);
       if (/^#{3,4}\s/.test(line)) {
         const level = line.startsWith('####') ? 'h4' : 'h3';
-        const text = line.replace(/^#{1,4}\s*/, '');
-        return `<${level}>${text}</${level}>`;
+        return `<${level}>${inline(line.replace(/^#{1,4}\s*/, ''))}</${level}>`;
       }
       if (/^[-*]\s/.test(line)) {
-        return `<li>${line.replace(/^[-*]\s*/, '')}</li>`;
+        return `<li>${inline(line.replace(/^[-*]\s*/, ''))}</li>`;
       }
       if (/^\d+\.\s/.test(line)) {
-        return `<li>${line.replace(/^\d+\.\s*/, '')}</li>`;
+        return `<li>${inline(line.replace(/^\d+\.\s*/, ''))}</li>`;
       }
       if (line.startsWith('&gt; ')) {
-        return `<blockquote>${line.replace(/^&gt;\s*/, '')}</blockquote>`;
+        return `<blockquote>${inline(line.replace(/^&gt;\s*/, ''))}</blockquote>`;
       }
       if (line.trim() === '') return '';
-      // Bold formatting
-      line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      return `<p>${line}</p>`;
+      return `<p>${inline(line)}</p>`;
     })
     .join('\n')
     .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');

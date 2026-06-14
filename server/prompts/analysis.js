@@ -39,6 +39,7 @@ Using the evidence you are given:
 - You may be given the reader's recent LinkedIn posts and their company's open job postings. These are gold. Use them.
 - The reader's posts are only useful when they reveal a relevant pain or need. Quote a post ONLY when it touches one of these themes: lead generation, pipeline, revenue pressure, weak results from AI SDRs or outbound tools, questions or skepticism about buying signals, account-based marketing, personalization, or message relevance. A quote like that proves the reader already feels the problem this report solves, so use it to show they need a signal-based program. Reference it directly ("You wrote that ...", "In your post on X you said ..."). Ignore off-topic, promotional, or unrelated posts entirely. If no post fits these themes, do not quote at all. Never force a quote to seem personalized, a random quote is worse than none.
 - You will usually also receive recent posts from the company's decision-makers (the buying committee: CEO, CRO, CMO, VP Sales, VP Marketing, RevOps). The same curation rule applies, quote only pain-relevant posts. The buying committee's own words are often your strongest evidence, since they are the people who would approve a Smoke Signals engagement, and they make the report robust even when the reader has posted nothing useful. Attribute each quote to that person and their role ("Your CMO, Jane Doe, recently wrote that ..."). Critical: if a decision-maker IS the reader (their name matches the reader named at the top of this message), that is the reader, so attribute those quotes in the second person ("you wrote", "as you put it"), never the third person. Do not call the reader "your CEO" or otherwise refer to the reader as a separate person. Never fabricate a quote or a name.
+- Whenever you quote a post, hyperlink the quoted words to that post using markdown: "[the exact quoted words](SOURCE_URL)", using the Source URL given with that post. If a post has no Source URL, quote it without a link. Never invent, guess, or alter a URL, and never link to a different post than the one you are quoting.
 - Open job postings are buying signals. Hiring three SDRs, a "Head of Growth", or a "RevOps lead" tells you what they are betting on and where the gaps are. Tie the roles to the strategy.
 - Never fabricate a quote, a post, or a job. If the evidence is thin or missing, lean on the website research instead. Do not say "I could not find your posts." Just proceed.
 - Address the reader by first name once, naturally, if you know it. Do not overuse it.
@@ -245,7 +246,7 @@ function formatPosts(posts) {
     const when = p.date ? ` (${p.date})` : '';
     const text = (p.text || '').replace(/\s+/g, ' ').trim().slice(0, 600);
     if (!text) return null;
-    return `Post ${i + 1}${when}: ${text}`;
+    return `Post ${i + 1}${when}: ${text}${p.url ? `\n  Source URL: ${p.url}` : ''}`;
   }).filter(Boolean).join('\n\n') || '(No readable post text retrieved.)';
 }
 
@@ -268,7 +269,8 @@ function formatDecisionMakers(dms) {
     const head = `${dm.name || 'Unknown'}${dm.headline ? ', ' + dm.headline : ''}`;
     const posts = (dm.posts || []).slice(0, 6).map((p) => {
       const t = (p.text || '').replace(/\s+/g, ' ').trim().slice(0, 500);
-      return t ? `  - "${t}"${p.date ? ' (' + p.date + ')' : ''}` : null;
+      if (!t) return null;
+      return `  - "${t}"${p.date ? ' (' + p.date + ')' : ''}${p.url ? ` [Source URL: ${p.url}]` : ''}`;
     }).filter(Boolean).join('\n');
     return head + (posts ? '\n' + posts : '\n  (no readable recent posts)');
   }).join('\n\n');
