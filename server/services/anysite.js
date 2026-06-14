@@ -49,18 +49,33 @@ function firstExperience(p) {
   return null;
 }
 
-// Email -> LinkedIn profile. POST /api/linkedin/email/user { email }.
-// Returns the bits we need, including the fsd_profile URN required for posts.
-async function enrichPersonByEmail(email) {
+async function emailLookup(path, email) {
   try {
-    const data = await anysiteFetch('/api/linkedin/email/user', {
+    const data = await anysiteFetch(path, {
       method: 'POST',
       body: JSON.stringify({ email, timeout: 300 })
     });
-
     const p = Array.isArray(data) ? data[0] : (data && (data.data || data.user || data)) || null;
-    if (!p) return null;
+    // Treat as a hit only if it looks like a real profile.
+    return p && (p.first_name || p.firstName || p.urn || p.name) ? p : null;
+  } catch (err) {
+    console.warn('[gtmos] ' + path + ' failed:', err.message);
+    return null;
+  }
+}
 
+// Email -> LinkedIn profile, with a SQL-lookup fallback. Returns the bits we
+// need, including the fsd_profile URN required for posts. Returns null if the
+// email maps to no LinkedIn profile (personal email, role inbox, no coverage).
+async function enrichPersonByEmail(email) {
+  let p = await emailLookup('/api/linkedin/email/user', email);
+  if (!p) p = await emailLookup('/api/linkedin/email/sql/user', email);
+  if (!p) {
+    console.log('[gtmos] enrichPersonByEmail: no LinkedIn profile for', email);
+    return null;
+  }
+
+  {
     const exp = firstExperience(p);
     const company = (exp && (exp.company || exp.company_name || exp.name)) || p.company || '';
     const companyUrn = urnString(exp && (exp.company_urn || exp.companyUrn || exp.urn)) || '';
@@ -86,8 +101,35 @@ async function enrichPersonByEmail(email) {
     });
 
     return result;
+  }
+}
+
+// Resolve a company from its WEBSITE/domain (independent of any person), via
+// google/company which accepts a website as a keyword and can return the URN.
+async function resolveCompanyByDomain(query) {
+  if (!query) return null;
+  const cacheKey = `coresolve:${String(query).toLowerCase()}`;
+  const cached = cache.get(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const data = await anysiteFetch('/api/linkedin/google/company', {
+      method: 'POST',
+      body: JSON.stringify({ keywords: [query], with_urn: true, count: 3 })
+    });
+    const arr = Array.isArray(data) ? data : (data.results || data.data || []);
+    const top = (Array.isArray(arr) ? arr : [])[0] || null;
+    const result = top ? {
+      name: top.title || top.name || '',
+      alias: top.alias || '',
+      urn: urnString(top.urn),
+      url: top.url || ''
+    } : null;
+    console.log('[gtmos] resolveCompanyByDomain:', { query, found: !!result, name: result && result.name, hasUrn: !!(result && result.urn) });
+    if (result) cache.set(cacheKey, result);
+    return result;
   } catch (err) {
-    console.warn('[gtmos] enrichPersonByEmail failed:', err.message);
+    console.warn('[gtmos] resolveCompanyByDomain failed:', err.message);
     return null;
   }
 }
@@ -206,6 +248,7 @@ async function getCompanyJobs(companyUrn, count = 15) {
 
 module.exports = {
   enrichPersonByEmail,
+  resolveCompanyByDomain,
   getLinkedInPosts,
   getCompanyProfile,
   getCompanyJobs,

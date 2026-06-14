@@ -51,6 +51,10 @@ function extractMeta(html) {
   const ogDescMatch = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
   if (ogDescMatch) meta.ogDescription = ogDescMatch[1].trim();
 
+  // og:site_name is usually the clean brand name, a good company-name fallback.
+  const ogSiteMatch = html.match(/<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i);
+  if (ogSiteMatch) meta.siteName = ogSiteMatch[1].trim();
+
   return meta;
 }
 
@@ -124,7 +128,8 @@ async function scrapeWebsite(websiteUrl) {
     raw: research.slice(0, 50000),
     meta: homeMeta,
     pagesScraped: 1 + pages.subpages.length,
-    usesHubSpot
+    usesHubSpot,
+    siteName: homeMeta.siteName || ''
   };
 }
 
