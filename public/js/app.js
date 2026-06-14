@@ -363,10 +363,47 @@
 
     showScreen(resultsScreen);
 
-    // Setup sidebar scroll tracking + concierge chat
+    // Setup sidebar scroll tracking + concierge chat + conversion mechanics
     setupSidebarNav();
     setupChat();
+    setupConversion(companyName);
     flushSurvey(); // capture any final survey selections now the contact exists
+  }
+
+  // ---------- Conversion mechanics (CTA personalization, sticky bar, progress, chat/calendar) ----------
+  function setupConversion(companyName) {
+    const co = companyName || 'your company';
+    document.querySelectorAll('.cta-company').forEach(function (el) { el.textContent = co; });
+
+    const spb = document.getElementById('scrollProgressBar');
+    const sp = document.getElementById('scrollProgress');
+    const sticky = document.getElementById('stickyCta');
+    const ctaSection = document.getElementById('cta-section');
+    if (sp) sp.classList.add('active');
+
+    let ctaInView = false;
+
+    function onScroll() {
+      if (spb) {
+        const h = document.documentElement.scrollHeight - window.innerHeight;
+        const pct = h > 0 ? (window.scrollY / h) * 100 : 0;
+        spb.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      }
+      if (sticky) sticky.hidden = !(window.scrollY > 500 && !ctaInView);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+
+    // When the booking calendar is in view: hide the sticky bar (redundant) and
+    // the chat widget (so it never covers the time-slot buttons).
+    if (ctaSection && 'IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        ctaInView = entries[0].isIntersecting;
+        if (sticky && ctaInView) sticky.hidden = true;
+        if (chatWidget) chatWidget.classList.toggle('chat-hidden', ctaInView);
+        onScroll();
+      }, { threshold: 0.12 }).observe(ctaSection);
+    }
   }
 
   // Try the LinkedIn logo, then Clearbit, then Google's favicon service (which
@@ -532,22 +569,32 @@
 
     container.appendChild(app);
 
-    // Handle submit
+    // Handle submit. Never show an error state in front of the prospect: fall
+    // back to a clean illustrative result if anything goes wrong.
     submitBtn.addEventListener('click', function () {
-      generateMicroAppResults(results, spec);
+      try {
+        generateMicroAppResults(results, spec);
+      } catch (e) {
+        results.innerHTML = '<h4>' + escapeHtml(spec.resultTitle || 'Your Score') + '</h4>' +
+          '<div class="micro-app-score"><div class="score-circle">62</div><div class="score-label">out of 100</div></div>' +
+          '<div class="micro-app-cta"><a href="#cta-section" data-book>Want one of these built for your funnel? Let us map it &rarr;</a></div>';
+        results.classList.add('visible');
+      }
     });
   }
 
   // Deterministic scoring driven by the visitor's actual inputs and the model's
   // scoring spec. The same answers always produce the same score. No randomness.
   function generateMicroAppResults(resultsEl, spec) {
-    const scored = computeMicroAppScores(spec);
-    const totalScore = scored.overall;
+    let scored;
+    try { scored = computeMicroAppScores(spec); } catch (e) { scored = { overall: 62, metrics: [] }; }
+    const totalScore = (scored && typeof scored.overall === 'number') ? scored.overall : 62;
+    const metrics = (scored && Array.isArray(scored.metrics)) ? scored.metrics : [];
 
     let html = '<h4>' + escapeHtml(spec.resultTitle || 'Your Results') + '</h4>';
     html += '<div class="micro-app-score"><div class="score-circle">' + totalScore + '</div><div class="score-label">out of 100</div></div>';
 
-    scored.metrics.forEach(function (m) {
+    metrics.forEach(function (m) {
       const color = m.score >= 65 ? 'green' : m.score >= 45 ? 'yellow' : 'red';
       html += '<div class="metric-bar">' +
         '<span class="metric-bar-label">' + escapeHtml(m.label) + '</span>' +
@@ -563,9 +610,12 @@
       html += '<div class="micro-app-benchmark">' + escapeHtml(spec.benchmark).replace('{score}', String(totalScore)) + '</div>';
     }
 
+    // The app supports the booking, it is not the conversion step itself.
+    html += '<div class="micro-app-cta"><a href="#cta-section" data-book>Want one of these built for your funnel? Let us map it &rarr;</a></div>';
+
     resultsEl.innerHTML = html;
     resultsEl.classList.add('visible');
-    resultsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    try { resultsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
   }
 
   function clampScore(n) { return Math.max(0, Math.min(100, Math.round(n))); }

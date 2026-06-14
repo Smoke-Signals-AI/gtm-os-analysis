@@ -1669,3 +1669,149 @@ h4 { font-weight: 600; font-size: 1rem; line-height: 1.3; }
   .chat-typing span { animation: none; }
   .signal-principle { transition: none; }
 }
+
+/* ========================================
+   CRO: conversion mechanics
+   ======================================== */
+
+/* Primary book button (dominant everywhere) */
+.btn-book {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 15px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 14px 24px;
+  cursor: pointer;
+  text-decoration: none;
+  box-shadow: 0 6px 18px rgba(232, 93, 80, 0.35);
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+.btn-book:hover { background: #D14D41; transform: translateY(-1px); color: #fff; }
+.btn-book-block { display: flex; width: 100%; }
+
+/* Demoted secondary action (Download PDF) */
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  padding: 9px 12px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.btn-ghost:hover { color: #fff; border-color: rgba(255, 255, 255, 0.4); }
+.btn-ghost svg { width: 15px; height: 15px; }
+
+/* Hero / overview */
+.overview-headline {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-size: 2rem;
+  line-height: 1.15;
+  color: var(--text-primary);
+  margin: 18px 0 14px;
+  max-width: 680px;
+}
+.overview-proof {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 14px 0 0;
+}
+.overview-cta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 22px;
+}
+.cta-note {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-caption);
+}
+
+/* End-of-section CTAs */
+.section-cta {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--divider);
+}
+.section-cta-link {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+.section-cta-link:hover { text-decoration: underline; }
+
+/* Host intro near the calendar */
+.host-intro { margin: 6px 0 22px; }
+.host-name { font-family: var(--font-sans); font-weight: 700; font-size: 15px; color: #fff; }
+.host-cred { font-family: var(--font-sans); font-size: 13px; color: rgba(255, 255, 255, 0.6); margin-top: 2px; }
+
+/* Micro-app post-interaction CTA */
+.micro-app-cta { margin-top: 18px; text-align: center; }
+.micro-app-cta a { font-family: var(--font-sans); font-weight: 600; color: var(--accent); text-decoration: none; }
+.micro-app-cta a:hover { text-decoration: underline; }
+
+/* Persistent booking bar */
+.sticky-cta {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 12px 20px;
+  background: var(--navy);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.22);
+}
+.sticky-cta[hidden] { display: none; }
+.sticky-cta-text { font-family: var(--font-serif); font-size: 15px; color: rgba(255, 255, 255, 0.85); }
+.sticky-cta .btn-book { padding: 10px 20px; font-size: 14px; }
+
+/* Scroll progress */
+.scroll-progress {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  z-index: 260;
+  background: transparent;
+}
+.scroll-progress.active { display: block; }
+#scrollProgressBar { height: 100%; width: 0; background: var(--accent); transition: width 0.1s linear; }
+
+/* Hide the chat widget over the booking calendar so it never covers time slots */
+.chat-widget.chat-hidden { display: none !important; }
+
+@media (max-width: 768px) {
+  .overview-headline { font-size: 1.6rem; }
+  .sticky-cta { gap: 12px; padding: 10px 14px; }
+  .sticky-cta-text { display: none; }
+  .sticky-cta .btn-book { width: 100%; }
+  /* leave room so the sticky bar never sits on top of the footer/calendar */
+  .main-content { padding-bottom: 76px; }
+}
