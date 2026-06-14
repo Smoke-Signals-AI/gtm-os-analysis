@@ -49,6 +49,17 @@ function firstExperience(p) {
   return null;
 }
 
+function summarizeShape(data) {
+  try {
+    if (Array.isArray(data)) {
+      const f = data[0];
+      return 'array(' + data.length + ')' + (f && typeof f === 'object' ? ' item keys: ' + Object.keys(f).slice(0, 15).join(',') : '');
+    }
+    if (data && typeof data === 'object') return 'keys: ' + Object.keys(data).slice(0, 20).join(',');
+    return typeof data + ' ' + String(data).slice(0, 120);
+  } catch (_) { return 'unknown'; }
+}
+
 async function emailLookup(path, email) {
   try {
     const data = await anysiteFetch(path, {
@@ -56,10 +67,40 @@ async function emailLookup(path, email) {
       body: JSON.stringify({ email, timeout: 300 })
     });
     const p = Array.isArray(data) ? data[0] : (data && (data.data || data.user || data)) || null;
-    // Treat as a hit only if it looks like a real profile.
-    return p && (p.first_name || p.firstName || p.urn || p.name) ? p : null;
+    if (p && (p.first_name || p.firstName || p.urn || p.name)) return p;
+    console.log('[gtmos] ' + path + ': 200 but no profile fields. shape ->', summarizeShape(data));
+    return null;
   } catch (err) {
     console.warn('[gtmos] ' + path + ' failed:', err.message);
+    return null;
+  }
+}
+
+// Find a person by first name + company when email lookup fails. Returns the
+// top match's fsd_profile URN (for posts) and basic fields, or null.
+async function searchPerson(firstName, company) {
+  if (!firstName || !company) return null;
+  try {
+    const data = await anysiteFetch('/api/linkedin/search/users', {
+      method: 'POST',
+      body: JSON.stringify({ first_name: firstName, keywords: company, count: 3, timeout: 300 })
+    });
+    const arr = Array.isArray(data) ? data : (data.results || data.data || []);
+    const top = (Array.isArray(arr) ? arr : [])[0] || null;
+    if (!top) { console.log('[gtmos] searchPerson: no match for', { firstName, company }); return null; }
+    const nameParts = String(top.name || '').trim().split(/\s+/);
+    const result = {
+      firstName: nameParts[0] || firstName,
+      lastName: nameParts.slice(1).join(' '),
+      profileUrn: urnString(top.urn || top.internal_id),
+      headline: top.headline || '',
+      linkedinUrl: top.url || '',
+      alias: top.alias || ''
+    };
+    console.log('[gtmos] searchPerson:', { firstName, company, match: top.name, headline: String(top.headline || '').slice(0, 60), hasUrn: !!result.profileUrn });
+    return result.profileUrn ? result : null;
+  } catch (err) {
+    console.warn('[gtmos] searchPerson failed:', err.message);
     return null;
   }
 }
@@ -266,7 +307,8 @@ async function getCompanyJobs(companyUrn, count = 15) {
   try {
     const data = await anysiteFetch('/api/linkedin/search/jobs', {
       method: 'POST',
-      body: JSON.stringify({ company: urn, count })
+      // The live API wants `company` as a set (array of company URNs), not a string.
+      body: JSON.stringify({ company: [urn], count })
     });
 
     const raw = Array.isArray(data) ? data : (data.jobs || data.results || data.data || []);
@@ -288,6 +330,7 @@ async function getCompanyJobs(companyUrn, count = 15) {
 
 module.exports = {
   enrichPersonByEmail,
+  searchPerson,
   resolveCompanyByDomain,
   getLinkedInPosts,
   getCompanyProfile,

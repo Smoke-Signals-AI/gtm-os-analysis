@@ -246,6 +246,25 @@ async function runWorkstreamA(email, domain, sendProgress) {
     };
   }
 
+  // Person fallback: if email lookup gave no profile URN, search by guessed
+  // first name + resolved company so we can still pull the reader's posts.
+  if (!(enrichedPerson && enrichedPerson.profileUrn)) {
+    const guessedFirst = guessFirstNameFromEmail(email);
+    const coName = (resolvedCompany && resolvedCompany.name) || (enrichedPerson && enrichedPerson.company) || '';
+    if (guessedFirst && coName) {
+      const found = await anysite.searchPerson(guessedFirst, coName).catch(() => null);
+      if (found && found.profileUrn) {
+        enrichedPerson = enrichedPerson || { firstName: '', lastName: '', title: '', company: coName, companyUrn: '', linkedinUrl: '', headline: '' };
+        enrichedPerson.profileUrn = found.profileUrn;
+        if (!enrichedPerson.firstName) enrichedPerson.firstName = found.firstName || guessedFirst;
+        if (!enrichedPerson.lastName) enrichedPerson.lastName = found.lastName || '';
+        if (!enrichedPerson.headline) enrichedPerson.headline = found.headline || '';
+        if (!enrichedPerson.linkedinUrl) enrichedPerson.linkedinUrl = found.linkedinUrl || '';
+        if (!enrichedPerson.company) enrichedPerson.company = coName;
+      }
+    }
+  }
+
   if (existingContact) {
     contactId = existingContact.id;
     sendProgress('crm', 'Found your profile...');
