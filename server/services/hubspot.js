@@ -78,8 +78,15 @@ async function ensurePropertyGroup() {
   }
 }
 
+// Labels carry the "GTM OS - " prefix to match the convention already in the
+// portal. ensureProperties only creates names that don't exist yet, so the
+// pre-existing properties keep their portal labels; this prefix only applies
+// to the new ones created here (report URL, referral attribution, lead source).
 const GTMOS_PROPERTIES = [
   { name: 'gtmos_website_url', label: 'Website URL', type: 'string', fieldType: 'text' },
+  { name: 'gtmos_report_url', label: 'GTM OS - Report URL', type: 'string', fieldType: 'text' },
+  { name: 'gtmos_referred_report_url', label: 'GTM OS - Referred Report URL', type: 'string', fieldType: 'text' },
+  { name: 'gtmos_lead_source', label: 'GTM OS - Lead Source', type: 'string', fieldType: 'text' },
   { name: 'gtmos_icp_profile', label: 'ICP Profile', type: 'string', fieldType: 'textarea' },
   { name: 'gtmos_usp_analysis', label: 'USP Analysis', type: 'string', fieldType: 'textarea' },
   { name: 'gtmos_alpha_signal', label: 'Alpha Signal', type: 'string', fieldType: 'textarea' },
@@ -127,6 +134,7 @@ async function ensureProperties() {
 async function pushAnalysisToContact(contactId, analysisData) {
   const properties = {
     gtmos_website_url: analysisData.websiteUrl || '',
+    gtmos_report_url: analysisData.reportUrl || '',
     gtmos_icp_profile: truncate(analysisData.icpProfile),
     gtmos_usp_analysis: truncate(analysisData.uspAnalysis),
     gtmos_alpha_signal: truncate(analysisData.alphaSignal),
@@ -146,10 +154,29 @@ function truncate(str, max = 65000) {
   return str.length > max ? str.slice(0, max) : str;
 }
 
+// Capture a visitor who unlocked a shared report behind the email gate. Upserts
+// the contact by email and records which report they viewed (for attribution).
+// New contacts are tagged with a lead source; existing contacts keep whatever
+// source they already had, so a shared-report view never reclassifies a lead.
+async function recordSharedReportView({ email, reportUrl }) {
+  const existing = await searchContactByEmail(email);
+  if (existing) {
+    return updateContact(existing.id, {
+      gtmos_referred_report_url: reportUrl || ''
+    });
+  }
+  return createContact({
+    email,
+    gtmos_referred_report_url: reportUrl || '',
+    gtmos_lead_source: 'Shared GTM OS Report'
+  });
+}
+
 module.exports = {
   searchContactByEmail,
   createContact,
   updateContact,
   ensureProperties,
-  pushAnalysisToContact
+  pushAnalysisToContact,
+  recordSharedReportView
 };

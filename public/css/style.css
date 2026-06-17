@@ -195,6 +195,11 @@ h4 { font-weight: 600; font-size: 1rem; line-height: 1.3; }
 
 .form-error.visible { display: block; }
 
+/* Shared-report email gate: reuses .hero layout but stays hidden until the
+   deep-link handler activates it (id beats the .hero class on specificity). */
+#gateScreen { display: none; }
+#gateScreen.active { display: flex; }
+
 /* ========================================
    LOADING SCREEN + SURVEY
    ======================================== */
