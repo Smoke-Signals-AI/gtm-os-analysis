@@ -1202,6 +1202,8 @@ h4 { font-weight: 600; font-size: 1rem; line-height: 1.3; }
   .overview-brand { flex-direction: column; align-items: flex-start; gap: 12px; }
   .overview-title { font-size: 1.6rem; }
 
+  .btn-share-mobile { display: inline-flex; }
+
   .insight-grid { grid-template-columns: 1fr; }
 
   .sequence-timeline { max-width: 100%; }
@@ -1751,6 +1753,29 @@ h4 { font-weight: 600; font-size: 1rem; line-height: 1.3; }
   font-size: 13px;
   color: var(--text-caption);
 }
+
+/* Mobile-only share action. The sidebar Share/PDF buttons are hidden on small
+   screens, so the share affordance is surfaced in the overview where it stays
+   reachable (and where the native share sheet matters most). Hidden on desktop,
+   which keeps the sidebar Share button as the single entry point there. */
+.btn-share-mobile {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 12px 20px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.btn-share-mobile:hover { border-color: var(--text-primary); }
+.btn-share-mobile svg { width: 15px; height: 15px; }
 
 /* End-of-section CTAs */
 .section-cta {
