@@ -7,6 +7,7 @@
 
   // DOM Elements
   const heroScreen = document.getElementById('heroScreen');
+  const gateScreen = document.getElementById('gateScreen');
   const loadingScreen = document.getElementById('loadingScreen');
   const errorScreen = document.getElementById('errorScreen');
   const resultsScreen = document.getElementById('resultsScreen');
@@ -21,6 +22,7 @@
   const errorMessage = document.getElementById('errorMessage');
   const retryBtn = document.getElementById('retryBtn');
   const downloadPdfBtn = document.getElementById('downloadPdfBtn');
+  const shareReportBtn = document.getElementById('shareReportBtn');
   const resultsDomain = document.getElementById('resultsDomain');
   const companyLogo = document.getElementById('companyLogo');
 
@@ -63,7 +65,7 @@
 
   // ---------- Screen Management ----------
   function showScreen(screen) {
-    [heroScreen, loadingScreen, errorScreen, resultsScreen].forEach(s => {
+    [heroScreen, gateScreen, loadingScreen, errorScreen, resultsScreen].forEach(s => {
       s.style.display = 'none';
       s.classList.remove('active');
     });
@@ -912,6 +914,40 @@
     }, 3000);
   });
 
+  // ---------- Share Report ----------
+  // Build the shareable results link and hand it off: native share sheet on
+  // devices that support it (mobile), clipboard copy elsewhere, prompt as a
+  // last resort. Visitors who open the link hit the email gate (see below).
+  function shareReportLabel(text) {
+    if (!shareReportBtn) return;
+    shareReportBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>' + text;
+  }
+
+  if (shareReportBtn) {
+    shareReportBtn.addEventListener('click', async function () {
+      if (!currentAnalysisId) return;
+      const url = window.location.origin + '/?report=' + encodeURIComponent(currentAnalysisId);
+
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: 'Your GTM OS report', url: url });
+          return;
+        } catch (e) {
+          // User dismissed the share sheet (or it is unavailable): fall through to copy.
+          if (e && e.name === 'AbortError') return;
+        }
+      }
+
+      try {
+        await navigator.clipboard.writeText(url);
+        shareReportLabel('Link copied');
+        setTimeout(function () { shareReportLabel('Share Report'); }, 2500);
+      } catch (e) {
+        window.prompt('Copy this link to share your report:', url);
+      }
+    });
+  }
+
   // ---------- Error Handling ----------
   function showError(message) {
     stopPrincipleRotation();
@@ -1044,15 +1080,63 @@
       .catch(function () {});
   }
 
-  // ---------- Deep link: /?report=<id> opens a specific stored report ----------
-  (function loadSharedReport() {
+  // ---------- Deep link: /?report=<id> gates a shared report behind an email ----------
+  // A visitor opening someone's share link is shown the email gate. On submit we
+  // unlock the report (capturing them in HubSpot) and render it. The owner who
+  // generated the report reaches it directly via the analysis flow, not here.
+  (function setupSharedReportGate() {
     var params = new URLSearchParams(window.location.search);
     var reportId = params.get('report');
-    if (!reportId) return;
-    fetch('/api/analysis/' + encodeURIComponent(reportId))
-      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-      .then(function (data) { renderResults(data); })
-      .catch(function () { /* report missing or expired: leave the hero screen up */ });
+    if (!reportId || !gateScreen) return;
+
+    var gateForm = document.getElementById('gateForm');
+    var gateEmail = document.getElementById('gateEmail');
+    var gateSubmitBtn = document.getElementById('gateSubmitBtn');
+    var gateError = document.getElementById('gateError');
+
+    function showGateError(msg) {
+      if (!gateError) return;
+      gateError.textContent = msg;
+      gateError.classList.add('visible');
+    }
+
+    showScreen(gateScreen);
+    if (!gateForm) return;
+
+    gateForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (gateError) gateError.classList.remove('visible');
+
+      var email = (gateEmail.value || '').trim();
+      if (!validateEmail(email)) {
+        showGateError('Please enter a valid email address.');
+        gateEmail.focus();
+        return;
+      }
+
+      gateSubmitBtn.disabled = true;
+      gateSubmitBtn.textContent = 'Unlocking...';
+
+      fetch('/api/analysis/' + encodeURIComponent(reportId) + '/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      })
+        .then(function (r) {
+          if (r.status === 404) return Promise.reject(new Error('This report was not found. It may have expired.'));
+          if (!r.ok) return Promise.reject(new Error('Something went wrong. Please try again.'));
+          return r.json();
+        })
+        .then(function (data) {
+          currentEmail = email; // so the concierge chat + survey attach to this visitor
+          renderResults(data);
+        })
+        .catch(function (err) {
+          gateSubmitBtn.disabled = false;
+          gateSubmitBtn.textContent = 'Unlock the Report';
+          showGateError(err.message || 'Something went wrong. Please try again.');
+        });
+    });
   })();
 
 })();

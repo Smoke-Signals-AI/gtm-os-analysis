@@ -37,6 +37,31 @@
     </div>
   </section>
 
+  <!-- ========== SHARED REPORT EMAIL GATE ========== -->
+  <!-- Shown when someone opens a /?report=<id> share link. Reuses the hero
+       styling; an email is required to unlock and is written back to HubSpot. -->
+  <section id="gateScreen" class="hero gate-screen">
+    <a href="https://www.smokesignals.ai" class="hero-logo-link">
+      <img src="/images/logo-white-hz.png" alt="Smoke Signals" class="hero-logo-img">
+    </a>
+    <span class="hero-badge">Signal-Based GTM Intelligence</span>
+    <h1>A GTM report was shared with you</h1>
+    <p class="hero-subtitle">
+      Enter your email to unlock this custom GTM intelligence report, built on alpha signals most teams never see.
+    </p>
+
+    <div class="form-card">
+      <form id="gateForm" novalidate>
+        <div class="form-group">
+          <label for="gateEmail">Email Address</label>
+          <input type="email" id="gateEmail" name="email" placeholder="you@company.com" required autocomplete="email">
+        </div>
+        <button type="submit" id="gateSubmitBtn" class="btn-primary">Unlock the Report</button>
+        <p id="gateError" class="form-error"></p>
+      </form>
+    </div>
+  </section>
+
   <!-- ========== LOADING SCREEN: SIGNAL LIFECYCLE ========== -->
   <section id="loadingScreen" class="loading-screen">
     <div class="signal-stage">
@@ -139,6 +164,10 @@
         <button id="downloadPdfBtn" class="btn-ghost">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Download PDF
+        </button>
+        <button id="shareReportBtn" class="btn-ghost">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          Share Report
         </button>
       </div>
     </aside>

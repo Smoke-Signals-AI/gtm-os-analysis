@@ -184,10 +184,15 @@ router.post('/analyze', async (req, res) => {
     };
     await store.setJSON(analysisKey(analysisId), storedAnalysis);
 
+    // Shareable results URL for this report (also written to HubSpot below so
+    // the link to the visitor's results lives on their contact record).
+    const reportUrl = `${req.protocol}://${req.get('host')}/?report=${encodeURIComponent(analysisId)}`;
+
     // Push to HubSpot (non-blocking)
     if (contactId) {
       hubspot.pushAnalysisToContact(contactId, {
         websiteUrl,
+        reportUrl,
         icpProfile: analysis.sections.icpProfile || '',
         uspAnalysis: analysis.sections.uspAnalysis || '',
         alphaSignal: analysis.sections.alphaSignal || '',
@@ -347,12 +352,10 @@ async function runWorkstreamA(email, domain, sendProgress) {
   return { contactId, enrichedPerson, linkedinPosts: readerPosts, jobPostings, companyProfile, decisionMakers };
 }
 
-// Fetch a stored analysis for rendering (used by the "Open their report"
-// deep link: /?report=<id>). Returns the same shape the SSE 'result' sends.
-router.get('/analysis/:id', async (req, res) => {
-  const a = await store.getJSON(analysisKey(req.params.id));
-  if (!a) return res.status(404).json({ error: 'Report not found. It may have expired.' });
-  res.json({
+// Shape a stored analysis into the client render payload (the same shape the
+// SSE 'result' event sends). Shared by the GET and unlock routes below.
+function shapeAnalysisForClient(a) {
+  return {
     analysisId: a.id,
     sections: a.sections,
     modelUsed: a.modelUsed,
@@ -363,7 +366,41 @@ router.get('/analysis/:id', async (req, res) => {
     person: a.enrichedPerson
       ? { firstName: a.enrichedPerson.firstName || '', title: a.enrichedPerson.title || '' }
       : null
-  });
+  };
+}
+
+// Fetch a stored analysis for rendering (used by the "Open their report"
+// deep link from Slack). Open by design for internal/team links; visitor-facing
+// share links go through the email gate at /analysis/:id/unlock below.
+router.get('/analysis/:id', async (req, res) => {
+  const a = await store.getJSON(analysisKey(req.params.id));
+  if (!a) return res.status(404).json({ error: 'Report not found. It may have expired.' });
+  res.json(shapeAnalysisForClient(a));
+});
+
+// Unlock a shared report. A visitor following someone's share link enters their
+// email here; we capture them in HubSpot as a shared-report lead (best-effort,
+// non-blocking) and return the report so the frontend can render it.
+router.post('/analysis/:id/unlock', async (req, res) => {
+  const { id } = req.params;
+  const email = (req.body && req.body.email ? String(req.body.email) : '').trim();
+
+  if (!validateEmail(email)) {
+    return res.status(400).json({ error: 'Please enter a valid email address.' });
+  }
+
+  const a = await store.getJSON(analysisKey(id));
+  if (!a) return res.status(404).json({ error: 'Report not found. It may have expired.' });
+
+  // Capture the viewer in HubSpot. ensureProperties first so the attribution
+  // properties exist (idempotent), then upsert. Non-blocking: a CRM hiccup must
+  // never keep someone from reading a report that was shared with them.
+  const reportUrl = `${req.protocol}://${req.get('host')}/?report=${encodeURIComponent(id)}`;
+  hubspot.ensureProperties()
+    .then(() => hubspot.recordSharedReportView({ email, reportUrl }))
+    .catch(err => console.warn('Shared report capture error:', err.message));
+
+  res.json(shapeAnalysisForClient(a));
 });
 
 // Export the store accessor for the PDF + chat routes (async: returns a Promise)
