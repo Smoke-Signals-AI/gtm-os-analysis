@@ -369,13 +369,14 @@ function shapeAnalysisForClient(a) {
   };
 }
 
-// Fetch a stored analysis for rendering (used by the "Open their report"
-// deep link from Slack). Open by design for internal/team links; visitor-facing
-// share links go through the email gate at /analysis/:id/unlock below.
-router.get('/analysis/:id', async (req, res) => {
-  const a = await store.getJSON(analysisKey(req.params.id));
-  if (!a) return res.status(404).json({ error: 'Report not found. It may have expired.' });
-  res.json(shapeAnalysisForClient(a));
+// The report payload is gated: it is served only through the email capture at
+// POST /analysis/:id/unlock. A plain GET must never return report content, or
+// anyone holding the link could skip the email step. We refuse it outright and
+// do not look the id up, so this also never reveals whether an id exists.
+// (Internal/team "Open their report" links are the /?report=<id> browser URL,
+// which also routes through the email gate.)
+router.get('/analysis/:id', (req, res) => {
+  res.status(403).json({ error: 'This report is gated. Open the share link and enter an email to unlock it.' });
 });
 
 // Unlock a shared report. A visitor following someone's share link enters their
