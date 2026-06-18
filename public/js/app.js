@@ -23,6 +23,7 @@
   const retryBtn = document.getElementById('retryBtn');
   const downloadPdfBtn = document.getElementById('downloadPdfBtn');
   const shareReportBtn = document.getElementById('shareReportBtn');
+  const shareReportBtnMobile = document.getElementById('shareReportBtnMobile');
   const resultsDomain = document.getElementById('resultsDomain');
   const companyLogo = document.getElementById('companyLogo');
 
@@ -918,35 +919,43 @@
   // Build the shareable results link and hand it off: native share sheet on
   // devices that support it (mobile), clipboard copy elsewhere, prompt as a
   // last resort. Visitors who open the link hit the email gate (see below).
-  function shareReportLabel(text) {
-    if (!shareReportBtn) return;
-    shareReportBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>' + text;
+  // Bound to both entry points: the sidebar button (desktop) and the overview
+  // button (mobile, where the sidebar is hidden). Feedback lands on whichever
+  // button was clicked by swapping its contents and restoring them.
+  function flashCopied(btn) {
+    if (!btn) return;
+    const original = btn.innerHTML;
+    const icon = btn.querySelector('svg');
+    btn.innerHTML = (icon ? icon.outerHTML + ' ' : '') + 'Link copied';
+    setTimeout(function () { btn.innerHTML = original; }, 2500);
   }
 
-  if (shareReportBtn) {
-    shareReportBtn.addEventListener('click', async function () {
-      if (!currentAnalysisId) return;
-      const url = window.location.origin + '/?report=' + encodeURIComponent(currentAnalysisId);
+  async function onShareClick(e) {
+    const btn = e.currentTarget;
+    if (!currentAnalysisId) return;
+    const url = window.location.origin + '/?report=' + encodeURIComponent(currentAnalysisId);
 
-      if (navigator.share) {
-        try {
-          await navigator.share({ title: 'Your GTM OS report', url: url });
-          return;
-        } catch (e) {
-          // User dismissed the share sheet (or it is unavailable): fall through to copy.
-          if (e && e.name === 'AbortError') return;
-        }
-      }
-
+    if (navigator.share) {
       try {
-        await navigator.clipboard.writeText(url);
-        shareReportLabel('Link copied');
-        setTimeout(function () { shareReportLabel('Share Report'); }, 2500);
-      } catch (e) {
-        window.prompt('Copy this link to share your report:', url);
+        await navigator.share({ title: 'Your GTM OS report', url: url });
+        return;
+      } catch (err) {
+        // User dismissed the share sheet (or it is unavailable): fall through to copy.
+        if (err && err.name === 'AbortError') return;
       }
-    });
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      flashCopied(btn);
+    } catch (err) {
+      window.prompt('Copy this link to share your report:', url);
+    }
   }
+
+  [shareReportBtn, shareReportBtnMobile].forEach(function (btn) {
+    if (btn) btn.addEventListener('click', onShareClick);
+  });
 
   // ---------- Error Handling ----------
   function showError(message) {
