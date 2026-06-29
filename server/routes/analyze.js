@@ -158,8 +158,26 @@ router.post('/analyze', async (req, res) => {
         onDelta: sendDelta
       });
     } catch (err) {
-      console.error('Anthropic API error:', err.message);
-      sendError('We are experiencing high demand. Your analysis is being queued. We will email you when it is ready.');
+      // Distinguish transient capacity errors (retry will likely succeed) from
+      // non-retryable bad-request errors (the same payload will fail forever).
+      // Labeling everything "high demand" hid a hard 400 (invalid request body)
+      // behind a load message, so the bug looked like a traffic spike.
+      const status = (err && (err.status || err.statusCode)) || 0;
+      const apiType = (err && err.error && (err.error.type || (err.error.error && err.error.error.type))) || '';
+      const msg = String((err && err.message) || '');
+      const transient = status === 429 || status === 529 || status >= 500 ||
+        /overloaded/i.test(apiType) || /overloaded|rate.?limit/i.test(msg);
+
+      if (transient) {
+        console.warn(`[gtmos] Anthropic capacity error (status ${status || 'n/a'}):`, msg);
+        sendError('We are experiencing high demand. Your analysis is being queued. We will email you when it is ready.');
+      } else {
+        // 4xx (e.g. an invalid request body) fails identically on retry, so do not
+        // pretend it is load. Log loudly with the response body so it surfaces as a bug.
+        const detail = err && err.error ? ` ${JSON.stringify(err.error).slice(0, 500)}` : '';
+        console.error(`[gtmos] Anthropic request failed, not retryable (status ${status || 'n/a'}):`, msg, detail);
+        sendError('Something went wrong generating your report. Please try again, and contact us if it keeps happening.');
+      }
       return;
     }
 
@@ -193,6 +211,7 @@ router.post('/analyze', async (req, res) => {
       hubspot.pushAnalysisToContact(contactId, {
         websiteUrl,
         reportUrl,
+        linkedinUrl: (enrichedPerson && enrichedPerson.linkedinUrl) || '',
         icpProfile: analysis.sections.icpProfile || '',
         uspAnalysis: analysis.sections.uspAnalysis || '',
         alphaSignal: analysis.sections.alphaSignal || '',
@@ -277,13 +296,17 @@ async function runWorkstreamA(email, domain, sendProgress) {
     sendProgress('crm', 'Found your profile...');
   } else {
     sendProgress('enrichment', 'Researching your competitive landscape...');
+    // Only standard HubSpot contact properties here. `linkedin_url` is not a
+    // property on the portal, so including it made every new-contact create 400,
+    // which left contactId null and silently skipped attaching the report to the
+    // contact. The LinkedIn URL is stored later via the gtmos_linkedin_url property
+    // in pushAnalysisToContact, after ensureProperties has had time to create it.
     const contactProps = { email };
     if (enrichedPerson) {
       if (enrichedPerson.firstName) contactProps.firstname = enrichedPerson.firstName;
       if (enrichedPerson.lastName) contactProps.lastname = enrichedPerson.lastName;
       if (enrichedPerson.title) contactProps.jobtitle = enrichedPerson.title;
       if (enrichedPerson.company) contactProps.company = enrichedPerson.company;
-      if (enrichedPerson.linkedinUrl) contactProps.linkedin_url = enrichedPerson.linkedinUrl;
     }
     try {
       const newContact = await hubspot.createContact(contactProps);
