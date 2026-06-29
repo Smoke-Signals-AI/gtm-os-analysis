@@ -58,6 +58,13 @@
   let streamRenderQueued = false;
   let principleTimer = null;
   let streamingStarted = false;
+  let lastFlush = 0;           // throttle transcript re-render (see scheduleFlush)
+  let currentAbort = null;     // AbortController for the in-flight analysis stream
+
+  // One-time-setup guards so a re-render never double-binds listeners/observers.
+  let conversionSetup = false;
+  let sidebarSetup = false;
+  let chatPollFails = 0;
 
   // Chat state
   let chatPollTimer = null;
@@ -151,10 +158,20 @@
       setPhase('capture');
     }
     accumulatedText += text;
-    if (!streamRenderQueued) {
-      streamRenderQueued = true;
-      requestAnimationFrame(flushTranscript);
-    }
+    scheduleFlush();
+  }
+
+  // Re-rendering the whole transcript through markdown on every token is O(n^2)
+  // over the generation and janks low-end devices. Coalesce to at most ~4x/sec.
+  function scheduleFlush() {
+    if (streamRenderQueued) return;
+    streamRenderQueued = true;
+    const wait = Math.max(0, 250 - (Date.now() - lastFlush));
+    setTimeout(function () {
+      streamRenderQueued = false;
+      lastFlush = Date.now();
+      flushTranscript();
+    }, wait);
   }
 
   function flushTranscript() {
@@ -277,10 +294,17 @@
 
   // ---------- SSE Analysis Stream ----------
   async function runAnalysis(email, website) {
+    // Supersede any previous in-flight run (retry/resubmit) so two streams can't
+    // race on shared state. The superseded run exits silently (see catch below).
+    if (currentAbort) { try { currentAbort._superseded = true; currentAbort.abort(); } catch (e) {} }
+    const ac = new AbortController();
+    currentAbort = ac;
+
     const response = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, website })
+      body: JSON.stringify({ email, website }),
+      signal: ac.signal
     });
 
     if (!response.ok) {
@@ -291,40 +315,72 @@
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let gotResult = false;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    // Watchdog: if no event arrives for a while the stream has stalled. Abort and
+    // surface an error instead of leaving the prospect on a frozen progress bar.
+    let watchdog = null;
+    function armWatchdog() {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(function () { try { ac.abort(); } catch (e) {} }, 45000);
+    }
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
+    // Process one "data: {json}" line. Returns true when the terminal result
+    // arrived. Heartbeats (": ping") and partial/non-JSON lines are ignored.
+    function handleLine(line) {
+      if (!line.startsWith('data: ')) return false;
+      const jsonStr = line.slice(6).trim();
+      if (!jsonStr) return false;
+      let event;
+      try { event = JSON.parse(jsonStr); } catch (e) { return false; }
+      if (event.type === 'progress') {
+        updateProgress(event.stage, event.message);
+      } else if (event.type === 'delta') {
+        onStreamDelta(event.text || '');
+      } else if (event.type === 'result') {
+        gotResult = true;
+        animateProgress(100);
+        setTimeout(function () { renderResults(event.data); }, 400);
+        return true;
+      } else if (event.type === 'error') {
+        throw new Error(event.message);
+      }
+      return false;
+    }
 
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const jsonStr = line.slice(6).trim();
-        if (!jsonStr) continue;
-
-        try {
-          const event = JSON.parse(jsonStr);
-
-          if (event.type === 'progress') {
-            updateProgress(event.stage, event.message);
-          } else if (event.type === 'delta') {
-            onStreamDelta(event.text || '');
-          } else if (event.type === 'result') {
-            animateProgress(100);
-            setTimeout(() => renderResults(event.data), 400);
-            return;
-          } else if (event.type === 'error') {
-            throw new Error(event.message);
-          }
-        } catch (parseErr) {
-          if (parseErr.message && !parseErr.message.includes('JSON')) {
-            throw parseErr;
-          }
+    armWatchdog();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        armWatchdog();
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep the trailing partial line
+        for (const line of lines) {
+          if (handleLine(line)) return;
         }
       }
+      // Flush trailing bytes + any final buffered line: the result frame can land
+      // in the tail without a closing newline, and was previously dropped here.
+      buffer += decoder.decode();
+      if (buffer && handleLine(buffer)) return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        if (ac._superseded) return;            // replaced by a newer run: stay silent
+        throw new Error('This took longer than expected. Please try again.');
+      }
+      throw err;
+    } finally {
+      if (watchdog) clearTimeout(watchdog);
+      if (currentAbort === ac) currentAbort = null;
+    }
+
+    // The stream ended without a terminal result event. The report was not saved
+    // server-side (the save happens just before the result is sent), so a retry
+    // is the honest path rather than leaving the user stranded.
+    if (!gotResult) {
+      throw new Error('The analysis ended before it finished. Please try again.');
     }
   }
 
@@ -377,6 +433,11 @@
   function setupConversion(companyName) {
     const co = companyName || 'your company';
     document.querySelectorAll('.cta-company').forEach(function (el) { el.textContent = co; });
+
+    // Listeners/observer are global and must be wired once, even if results render
+    // more than once (e.g. via the share-link gate).
+    if (conversionSetup) return;
+    conversionSetup = true;
 
     const spb = document.getElementById('scrollProgressBar');
     const sp = document.getElementById('scrollProgress');
@@ -434,7 +495,7 @@
     if (el && content) {
       el.innerHTML = formatMarkdown(content);
     } else if (el) {
-      el.innerHTML = '<p style="color:var(--text-caption)">This section is being generated.</p>';
+      el.innerHTML = '<p style="color:var(--text-caption)">This section was not available for this report. Try regenerating your analysis.</p>';
     }
   }
 
@@ -442,15 +503,17 @@
   function renderSignalSection(content) {
     if (!content) return;
 
-    // Extract micro-app JSON if present
-    const microAppMatch = content.match(/```microapp\s*\n([\s\S]*?)\n```/);
+    // Extract micro-app JSON if present. Tolerant of fence formatting drift: the
+    // inner newlines are optional, so a single-line or EOF-terminated fence still
+    // parses (otherwise the whole interactive app silently disappears).
+    const microAppMatch = content.match(/```microapp\s*([\s\S]*?)```/i);
     let microAppSpec = null;
     let textContent = content;
 
     if (microAppMatch) {
-      textContent = content.replace(/```microapp\s*\n[\s\S]*?\n```/, '').trim();
+      textContent = content.replace(/```microapp\s*[\s\S]*?```/i, '').trim();
       try {
-        microAppSpec = JSON.parse(microAppMatch[1]);
+        microAppSpec = JSON.parse(microAppMatch[1].trim());
       } catch (e) {
         console.warn('Could not parse micro-app spec:', e);
       }
@@ -711,11 +774,11 @@
       'Alpha Signal Detected' +
       '</div>';
 
-    const delays = ['Day 0', 'Day 3', 'Day 7'];
+    const delays = ['Day 0', 'Day 3', 'Day 7', 'Day 12', 'Day 18', 'Day 25'];
 
     emails.forEach(function (email, i) {
       // Connector
-      html += '<div class="seq-connector" data-delay="' + (delays[i] || 'Day ' + (i * 3)) + '"></div>';
+      html += '<div class="seq-connector" data-delay="' + (delays[i] || 'Day ' + (7 + (i - 2) * 5)) + '"></div>';
 
       // Email card
       html += '<div class="seq-email">' +
@@ -735,8 +798,12 @@
 
   function parseEmails(text) {
     const emails = [];
-    // Try to match "### Email N: Label" pattern
-    const emailBlocks = text.split(/###\s*Email\s*\d+[:\s]*/i).filter(Boolean);
+    // Split on an "Email N" header, tolerant of how it's marked up: "### Email 1:",
+    // "#### Email 1", or "**Email 1**". Without this, a minor formatting drift made
+    // the whole section fall back to a flat markdown dump.
+    const emailBlocks = text
+      .split(/(?:^|\n)\s*(?:#{2,4}\s*)?\*{0,2}\s*Email\s*\d+\b\*{0,2}[:.\s-]*/i)
+      .filter(function (b) { return b && b.trim(); });
 
     emailBlocks.forEach(function (block) {
       const lines = block.trim().split('\n');
@@ -775,6 +842,8 @@
 
   // ---------- Sidebar Navigation ----------
   function setupSidebarNav() {
+    if (sidebarSetup) return; // bind scroll-spy + nav handlers once
+    sidebarSetup = true;
     const navItems = document.querySelectorAll('.nav-item');
     const sections = [];
 
@@ -825,9 +894,22 @@
     let html = '';
     let inList = false;
     let listType = 'ul';
+    let inFence = false;
 
     for (let i = 0; i < lines.length; i++) {
-      let line = lines[i].trim();
+      const raw = lines[i];
+      let line = raw.trim();
+
+      // Fenced code block: toggle on ``` and render the inner lines verbatim so a
+      // stray fence never leaks literal backticks into the rendered section.
+      if (/^```/.test(line)) {
+        if (inList) { html += '</' + listType + '>'; inList = false; }
+        if (!inFence) { inFence = true; html += '<pre class="md-code">'; }
+        else { inFence = false; html += '</pre>'; }
+        continue;
+      }
+      if (inFence) { html += escapeHtml(raw) + '\n'; continue; }
+
       if (!line) {
         if (inList) { html += '</' + listType + '>'; inList = false; }
         continue;
@@ -842,6 +924,13 @@
       if (line.startsWith('### ')) {
         if (inList) { html += '</' + listType + '>'; inList = false; }
         html += '<h3>' + inlineFormat(line.slice(4)) + '</h3>';
+        continue;
+      }
+      // Generic level-2 heading (a non-"Section N" "## Heading"); otherwise the
+      // literal "##" leaks into a paragraph.
+      if (line.startsWith('## ')) {
+        if (inList) { html += '</' + listType + '>'; inList = false; }
+        html += '<h3>' + inlineFormat(line.slice(3)) + '</h3>';
         continue;
       }
 
@@ -882,6 +971,7 @@
     }
 
     if (inList) html += '</' + listType + '>';
+    if (inFence) html += '</pre>';
     return html;
   }
 
@@ -904,15 +994,24 @@
   // ---------- PDF Download ----------
   downloadPdfBtn.addEventListener('click', function () {
     if (!currentAnalysisId) return;
-    downloadPdfBtn.querySelector('svg') && (downloadPdfBtn.innerHTML = '<span>Generating...</span>');
+    const original = downloadPdfBtn.innerHTML;
+    downloadPdfBtn.innerHTML = '<span>Opening...</span>';
     downloadPdfBtn.disabled = true;
 
     window.open('/api/pdf/' + currentAnalysisId, '_blank');
 
-    setTimeout(function () {
-      downloadPdfBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download PDF';
+    // Restore when the user returns to this tab, not on a blind timer that lies
+    // about completion. Fallback timeout in case 'focus' never fires.
+    let restored = false;
+    function restore() {
+      if (restored) return;
+      restored = true;
+      window.removeEventListener('focus', restore);
+      downloadPdfBtn.innerHTML = original;
       downloadPdfBtn.disabled = false;
-    }, 3000);
+    }
+    window.addEventListener('focus', restore);
+    setTimeout(restore, 4000);
   });
 
   // ---------- Share Report ----------
@@ -967,6 +1066,14 @@
   }
 
   retryBtn.addEventListener('click', function () {
+    // Cancel any still-running stream and clear stale streaming state so the next
+    // run starts clean (no flash of the previous attempt's transcript).
+    if (currentAbort) { try { currentAbort._superseded = true; currentAbort.abort(); } catch (e) {} currentAbort = null; }
+    stopPrincipleRotation();
+    accumulatedText = '';
+    streamingStarted = false;
+    if (streamPanel) streamPanel.hidden = true;
+    if (streamTranscript) streamTranscript.innerHTML = '';
     showScreen(heroScreen);
     submitBtn.disabled = false;
     submitBtn.textContent = 'Generate Your Analysis';
@@ -1078,6 +1185,7 @@
     fetch('/api/chat/' + currentAnalysisId + '/messages?since=' + lastChatTs)
       .then(function (r) { return r.json(); })
       .then(function (data) {
+        chatPollFails = 0;
         (data.messages || []).forEach(function (m) {
           if (m.ts > lastChatTs) lastChatTs = m.ts;
           if (m.role === 'team') {
@@ -1086,7 +1194,11 @@
           }
         });
       })
-      .catch(function () {});
+      .catch(function () {
+        // Stop hammering a persistently failing endpoint every 4s forever.
+        chatPollFails++;
+        if (chatPollFails >= 5) stopChatPolling();
+      });
   }
 
   // ---------- Deep link: /?report=<id> gates a shared report behind an email ----------

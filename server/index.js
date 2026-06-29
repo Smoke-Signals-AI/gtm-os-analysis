@@ -1,9 +1,26 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const store = require('./utils/store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Process-level safety net. Without these, Node terminates the process on any
+// unhandled promise rejection (e.g. a write to a socket the client already
+// closed), which kills every in-flight analysis on the instance mid-stream.
+process.on('unhandledRejection', (reason) => {
+  console.error('[gtmos] Unhandled promise rejection:', reason && reason.stack ? reason.stack : reason);
+});
+const BENIGN_ERRORS = new Set(['EPIPE', 'ECONNRESET', 'ERR_STREAM_WRITE_AFTER_END', 'ERR_STREAM_DESTROYED']);
+process.on('uncaughtException', (err) => {
+  console.error('[gtmos] Uncaught exception:', err && err.stack ? err.stack : err);
+  // A dead client socket must never take the whole server down. Anything else
+  // leaves the process in an undefined state, so exit and let the platform
+  // restart a clean instance.
+  if (err && BENIGN_ERRORS.has(err.code)) return;
+  process.exit(1);
+});
 
 // Behind Railway's TLS proxy: trust X-Forwarded-* so req.protocol is https.
 app.set('trust proxy', true);
@@ -52,9 +69,16 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
 }));
 
-// Health check
+// Health check. Surfaces the durable-store status so a degraded backend (Redis
+// configured but down, or not configured at all) is visible instead of silent.
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const redis = store.health();
+  const degraded = redis.configured && !redis.ready;
+  res.json({
+    status: degraded ? 'degraded' : 'ok',
+    store: redis.configured ? (redis.ready ? 'redis' : 'redis-unavailable') : 'memory',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // API routes
@@ -77,6 +101,19 @@ app.get('*', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   if (INDEX_HTML) return res.type('html').send(INDEX_HTML);
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
+
+// Final error handler: turn a thrown/next(err) route error into a clean response
+// instead of a hung request or a process-killing throw. SSE responses may already
+// be streaming, so only write if the headers haven't gone out yet.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('[gtmos] Request error:', err && err.stack ? err.stack : err);
+  if (res.headersSent) {
+    try { res.end(); } catch (_) { /* socket already gone */ }
+    return;
+  }
+  res.status(500).json({ error: 'Something went wrong. Please try again.' });
 });
 
 app.listen(PORT, () => {

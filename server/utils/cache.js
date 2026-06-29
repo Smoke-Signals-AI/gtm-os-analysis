@@ -1,3 +1,7 @@
+// Short-lived in-process cache for external API responses (LinkedIn/company
+// lookups). Single-instance only; that is fine because it is a latency/cost
+// optimization, not a source of truth. Durable state lives in the store.
+
 const cache = new Map();
 
 const DEFAULT_TTL = 24 * 60 * 60 * 1000; // 24 hours
@@ -20,24 +24,15 @@ function has(key) {
   return get(key) !== null;
 }
 
-// Rate limiting: track submissions per email
-const rateLimits = new Map();
-
-function checkRateLimit(email, maxPerDay = 3) {
-  const key = email.toLowerCase().trim();
+// Background sweep so entries written once and never read again are still
+// reclaimed (get() only evicts lazily, on access). unref so it never keeps the
+// process alive on its own.
+const sweep = setInterval(() => {
   const now = Date.now();
-  const dayMs = 24 * 60 * 60 * 1000;
-
-  let entries = rateLimits.get(key) || [];
-  entries = entries.filter(ts => now - ts < dayMs);
-
-  if (entries.length >= maxPerDay) {
-    return false;
+  for (const [k, entry] of cache) {
+    if (now > entry.expiresAt) cache.delete(k);
   }
+}, 60 * 60 * 1000);
+if (sweep.unref) sweep.unref();
 
-  entries.push(now);
-  rateLimits.set(key, entries);
-  return true;
-}
-
-module.exports = { get, set, has, checkRateLimit };
+module.exports = { get, set, has };

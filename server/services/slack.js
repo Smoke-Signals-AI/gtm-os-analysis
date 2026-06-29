@@ -47,13 +47,19 @@ async function startThread({ domain, person, text, resultsUrl }) {
     unfurl_links: false
   });
 
-  // First visitor message in the thread
-  await slackPost('chat.postMessage', {
-    channel: process.env.SLACK_CHANNEL_ID,
-    thread_ts: parent.ts,
-    text: `:speech_balloon: *${who}:* ${text}`,
-    unfurl_links: false
-  });
+  // First visitor message in the thread. Best-effort: if this post fails we must
+  // still return the parent ts so the thread->analysis mapping gets saved (else
+  // team replies on this thread would never route back).
+  try {
+    await slackPost('chat.postMessage', {
+      channel: process.env.SLACK_CHANNEL_ID,
+      thread_ts: parent.ts,
+      text: `:speech_balloon: *${who}:* ${text}`,
+      unfurl_links: false
+    });
+  } catch (err) {
+    console.warn('Slack first-message post failed (thread kept):', err.message);
+  }
 
   return parent.ts;
 }
