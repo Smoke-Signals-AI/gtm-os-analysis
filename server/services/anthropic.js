@@ -1,5 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { getAnalysisPrompt, getChatSystemPrompt } = require('../prompts/analysis');
+const { stripLoneSurrogates } = require('../utils/validation');
 
 let client;
 
@@ -34,6 +35,9 @@ async function generateAnalysis({ websiteResearch, domain, usesHubSpot, enriched
 
   const anthropic = getClient();
 
+  // Strip unpaired UTF-16 surrogates before the SDK serializes the body. Scraped
+  // copy and LinkedIn posts carry emoji that truncation can split, and a lone
+  // surrogate makes the request body invalid JSON (API 400, retries never recover).
   const stream = anthropic.messages.stream({
     model: tier.id,
     max_tokens: 8000,
@@ -41,9 +45,9 @@ async function generateAnalysis({ websiteResearch, domain, usesHubSpot, enriched
     // little faster on the prefix; harmless when the prefix is below the cache
     // minimum for a given model.
     system: [
-      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }
+      { type: 'text', text: stripLoneSurrogates(systemPrompt), cache_control: { type: 'ephemeral' } }
     ],
-    messages: [{ role: 'user', content: userPrompt }]
+    messages: [{ role: 'user', content: stripLoneSurrogates(userPrompt) }]
   });
 
   if (typeof onDelta === 'function') {
@@ -76,20 +80,22 @@ async function generateChatReply({ domain, sections, enrichedPerson, history, us
 
   const systemPrompt = getChatSystemPrompt({ domain, sections, enrichedPerson });
 
+  // stripLoneSurrogates on every text field: visitor input and the report-grounded
+  // system prompt can carry orphaned surrogates that would make the body invalid JSON.
   const messages = [];
   (history || []).slice(-12).forEach((m) => {
-    if (m.role === 'visitor') messages.push({ role: 'user', content: m.text });
-    else if (m.role === 'assistant') messages.push({ role: 'assistant', content: m.text });
+    if (m.role === 'visitor') messages.push({ role: 'user', content: stripLoneSurrogates(m.text) });
+    else if (m.role === 'assistant') messages.push({ role: 'assistant', content: stripLoneSurrogates(m.text) });
     // human/team replies are folded in as assistant turns so the bot stays consistent
-    else if (m.role === 'team') messages.push({ role: 'assistant', content: m.text });
+    else if (m.role === 'team') messages.push({ role: 'assistant', content: stripLoneSurrogates(m.text) });
   });
-  messages.push({ role: 'user', content: userMessage });
+  messages.push({ role: 'user', content: stripLoneSurrogates(userMessage) });
 
   const message = await anthropic.messages.create({
     model: MODELS.standard.id,
     max_tokens: 600,
     system: [
-      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }
+      { type: 'text', text: stripLoneSurrogates(systemPrompt), cache_control: { type: 'ephemeral' } }
     ],
     messages
   });
