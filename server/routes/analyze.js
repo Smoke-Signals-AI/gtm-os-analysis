@@ -1,7 +1,6 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { validateEmail, sanitizeUrl, extractDomain } = require('../utils/validation');
-const { checkRateLimit } = require('../utils/cache');
 const hubspot = require('../services/hubspot');
 const anysite = require('../services/anysite');
 const scraper = require('../services/scraper');
@@ -53,7 +52,7 @@ router.post('/analyze', async (req, res) => {
     return res.status(400).json({ error: 'Please enter a valid website URL.' });
   }
 
-  if (!checkRateLimit(email)) {
+  if (!(await store.checkRateLimit('analyze:' + email, 3, 24 * 60 * 60))) {
     return res.status(429).json({ error: 'You have reached the maximum number of analyses for today. Please try again tomorrow.' });
   }
 
@@ -68,22 +67,53 @@ router.post('/analyze', async (req, res) => {
     'X-Accel-Buffering': 'no'
   });
 
+  // Abort upstream work (the Anthropic stream) when the client goes away, and
+  // keep the connection alive through idle proxies with a periodic heartbeat.
+  const ac = new AbortController();
+  let clientGone = false;
+
+  const heartbeat = setInterval(() => {
+    if (!clientGone && !res.writableEnded) {
+      try { res.write(': ping\n\n'); } catch (_) { /* peer gone */ }
+    }
+  }, 15000);
+  if (heartbeat.unref) heartbeat.unref();
+
+  req.on('close', () => {
+    if (res.writableEnded) return; // normal completion, not an abort
+    clientGone = true;
+    clearInterval(heartbeat);
+    try { ac.abort(); } catch (_) {}
+  });
+
+  // Every write is guarded: once the client is gone (or the stream ended) a write
+  // would throw and, unhandled, could take the process down.
+  function safeWrite(payload) {
+    if (clientGone || res.writableEnded) return false;
+    try { res.write(payload); return true; } catch (_) { return false; }
+  }
+
+  function endStream() {
+    clearInterval(heartbeat);
+    if (!res.writableEnded) { try { res.end(); } catch (_) {} }
+  }
+
   function sendProgress(stage, message) {
-    res.write(`data: ${JSON.stringify({ type: 'progress', stage, message })}\n\n`);
+    safeWrite(`data: ${JSON.stringify({ type: 'progress', stage, message })}\n\n`);
   }
 
   function sendDelta(text) {
-    res.write(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`);
+    safeWrite(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`);
   }
 
   function sendResult(data) {
-    res.write(`data: ${JSON.stringify({ type: 'result', data })}\n\n`);
-    res.end();
+    safeWrite(`data: ${JSON.stringify({ type: 'result', data })}\n\n`);
+    endStream();
   }
 
   function sendError(message) {
-    res.write(`data: ${JSON.stringify({ type: 'error', message })}\n\n`);
-    res.end();
+    safeWrite(`data: ${JSON.stringify({ type: 'error', message })}\n\n`);
+    endStream();
   }
 
   try {
@@ -155,9 +185,12 @@ router.post('/analyze', async (req, res) => {
         linkedinPosts,
         jobPostings,
         decisionMakers,
-        onDelta: sendDelta
+        onDelta: sendDelta,
+        signal: ac.signal
       });
     } catch (err) {
+      // Client disconnected mid-generation: stop quietly, nothing to send.
+      if (clientGone || (err && err.name === 'AbortError')) { endStream(); return; }
       // Distinguish transient capacity errors (retry will likely succeed) from
       // non-retryable bad-request errors (the same payload will fail forever).
       // Labeling everything "high demand" hid a hard 400 (invalid request body)
@@ -320,12 +353,15 @@ async function runWorkstreamA(email, domain, sendProgress) {
   // company's LinkedIn profile (for logo, name, and the company URN). The company
   // identifier comes from the domain resolution first, then the person.
   sendProgress('signals', 'Reading your public signals...');
+  // Only look up the company profile when we have a real LinkedIn identifier
+  // (alias/URN/URL/name from the domain resolve, or the person's company URN).
+  // Falling back to the bare domain just bought a guaranteed 412/timeout.
   const companyId = (resolvedCompany && (resolvedCompany.alias || resolvedCompany.urn || resolvedCompany.url || resolvedCompany.name))
     || (enrichedPerson && (enrichedPerson.companyUrn || enrichedPerson.company))
-    || domain;
+    || '';
   let [linkedinPosts, companyProfile] = await Promise.all([
     anysite.getLinkedInPosts(enrichedPerson && enrichedPerson.profileUrn, 20).catch(() => []),
-    anysite.getCompanyProfile(companyId).catch(() => null)
+    companyId ? anysite.getCompanyProfile(companyId).catch(() => null) : Promise.resolve(null)
   ]);
 
   // If the full profile failed but we resolved a company, keep its name + URN.

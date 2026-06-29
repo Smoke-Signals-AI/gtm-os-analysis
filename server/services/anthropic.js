@@ -21,7 +21,7 @@ const MODELS = {
 // arrive so the frontend can render the report progressively. The model and
 // total token count are unchanged versus a blocking call, but the reader sees
 // content within seconds instead of staring at a bar for 60-90s.
-async function generateAnalysis({ websiteResearch, domain, usesHubSpot, enrichedPerson, linkedinPosts, jobPostings, decisionMakers, onDelta }) {
+async function generateAnalysis({ websiteResearch, domain, usesHubSpot, enrichedPerson, linkedinPosts, jobPostings, decisionMakers, onDelta, signal }) {
   const tier = usesHubSpot ? MODELS.premium : MODELS.standard;
 
   const { systemPrompt, userPrompt } = getAnalysisPrompt({
@@ -48,7 +48,9 @@ async function generateAnalysis({ websiteResearch, domain, usesHubSpot, enriched
       { type: 'text', text: stripLoneSurrogates(systemPrompt), cache_control: { type: 'ephemeral' } }
     ],
     messages: [{ role: 'user', content: stripLoneSurrogates(userPrompt) }]
-  });
+  // A client disconnect aborts the upstream generation so we stop paying for and
+  // streaming tokens nobody is reading.
+  }, signal ? { signal } : undefined);
 
   if (typeof onDelta === 'function') {
     stream.on('text', (delta) => {
@@ -107,51 +109,59 @@ async function generateChatReply({ domain, sections, enrichedPerson, history, us
     .trim();
 }
 
+const SECTION_KEYS = ['icpProfile', 'uspAnalysis', 'alphaSignal', 'outboundSequence', 'contentStrategy'];
+
+// Match a section by the title's keywords rather than its number, so the report
+// still parses if the model drops/renames the "Section N" prefix. Order in the
+// document doesn't matter; each heading is mapped to its key by content.
+const SECTION_MATCHERS = [
+  { key: 'icpProfile', re: /icp\s*profile|ideal\s*customer/i },
+  { key: 'uspAnalysis', re: /unique\s*selling|usp\s*analysis|value\s*prop/i },
+  { key: 'alphaSignal', re: /alpha\s*signal|custom\b[\s\S]{0,20}signal|interactive\s*app/i },
+  { key: 'outboundSequence', re: /outbound\s*sequence|email\s*sequence|sequence\s*concept/i },
+  { key: 'contentStrategy', re: /content\s*(?:\+|and|&)?\s*linkedin|linkedin\s*plan|content\s*plan/i }
+];
+
 function parseSections(text) {
-  const sectionPatterns = [
-    { key: 'icpProfile', pattern: /(?:section\s*1|01)[:\s]*(?:icp\s*profile|ideal\s*customer)/i },
-    { key: 'uspAnalysis', pattern: /(?:section\s*2|02)[:\s]*(?:unique\s*selling|usp\s*analysis)/i },
-    { key: 'alphaSignal', pattern: /(?:section\s*3|03)[:\s]*(?:custom\s*alpha|alpha\s*signal)/i },
-    { key: 'outboundSequence', pattern: /(?:section\s*4|04)[:\s]*(?:outbound\s*sequence)/i },
-    { key: 'contentStrategy', pattern: /(?:section\s*5|05)[:\s]*(?:content|linkedin)/i }
-  ];
-
+  const lines = String(text || '').split('\n');
   const sections = {};
-  const lines = text.split('\n');
-
   let currentKey = null;
-  let currentContent = [];
+  let buf = [];
+
+  const flush = () => {
+    if (!currentKey) return;
+    const prev = sections[currentKey] ? sections[currentKey] + '\n' : '';
+    sections[currentKey] = (prev + buf.join('\n')).trim();
+  };
 
   for (const line of lines) {
-    let matched = false;
-    for (const { key, pattern } of sectionPatterns) {
-      if (pattern.test(line)) {
-        if (currentKey) {
-          sections[currentKey] = currentContent.join('\n').trim();
-        }
-        currentKey = key;
-        currentContent = [line];
-        matched = true;
-        break;
+    const trimmed = line.trim();
+    const isHeading = /^#{1,3}\s/.test(trimmed) || /^section\s*\d/i.test(trimmed);
+    let matchedKey = null;
+    if (isHeading) {
+      for (const m of SECTION_MATCHERS) {
+        if (m.re.test(trimmed)) { matchedKey = m.key; break; }
       }
     }
-    if (!matched && currentKey) {
-      currentContent.push(line);
+    if (matchedKey) {
+      flush();
+      currentKey = matchedKey;
+      buf = [line];
+    } else if (currentKey) {
+      buf.push(line);
     }
   }
+  flush();
 
-  if (currentKey) {
-    sections[currentKey] = currentContent.join('\n').trim();
-  }
-
-  // Fallback: if parsing failed, split into roughly equal parts
-  if (Object.keys(sections).length < 3) {
-    const keys = ['icpProfile', 'uspAnalysis', 'alphaSignal', 'outboundSequence', 'contentStrategy'];
-    const chunkSize = Math.ceil(lines.length / 5);
-    keys.forEach((key, i) => {
-      const start = i * chunkSize;
-      const end = Math.min(start + chunkSize, lines.length);
-      sections[key] = lines.slice(start, end).join('\n').trim();
+  // Backfill any section that never parsed (or parsed empty) from a positional
+  // slice of the text, so no section ever renders blank in the page, PDF, or
+  // chat grounding. We only fill the gaps; cleanly parsed sections are untouched.
+  const missing = SECTION_KEYS.filter(k => !sections[k] || !sections[k].trim());
+  if (missing.length) {
+    const chunk = Math.max(1, Math.ceil(lines.length / 5));
+    SECTION_KEYS.forEach((key, i) => {
+      if (sections[key] && sections[key].trim()) return;
+      sections[key] = lines.slice(i * chunk, Math.min((i + 1) * chunk, lines.length)).join('\n').trim();
     });
   }
 

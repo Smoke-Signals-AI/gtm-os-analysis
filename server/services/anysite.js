@@ -8,9 +8,18 @@ function anysiteHeaders() {
   };
 }
 
-async function anysiteFetch(path, options = {}) {
+// Per-call timeout. The old 30s ceiling meant a single slow upstream could stack
+// to minutes across the serial enrichment rounds; 10s fails fast into fallbacks.
+const ANYSITE_TIMEOUT_MS = Number(process.env.ANYSITE_TIMEOUT_MS) || 10000;
+// Retry only transient server/rate errors. Never retry 4xx (e.g. 412 precondition
+// or 422 validation) — those fail identically on retry.
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = 3;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function anysiteFetch(path, options = {}, attempt = 1) {
   const controller = new AbortController();
-  const reqTimeout = setTimeout(() => controller.abort(), 30000);
+  const reqTimeout = setTimeout(() => controller.abort(), ANYSITE_TIMEOUT_MS);
   try {
     const res = await fetch(`${ANYSITE_BASE}${path}`, {
       ...options,
@@ -18,6 +27,10 @@ async function anysiteFetch(path, options = {}) {
       signal: controller.signal
     });
     if (!res.ok) {
+      if (RETRYABLE_STATUS.has(res.status) && attempt < MAX_ATTEMPTS) {
+        await sleep(250 * attempt);
+        return anysiteFetch(path, options, attempt + 1);
+      }
       let body;
       try { body = await res.text(); } catch {}
       const err = new Error(`Anysite API error: ${res.status}${body ? ' - ' + body : ''}`);
@@ -25,6 +38,14 @@ async function anysiteFetch(path, options = {}) {
       throw err;
     }
     return res.json();
+  } catch (err) {
+    // Timeout (AbortError) and network errors (TypeError) are transient: retry.
+    const transient = err && (err.name === 'AbortError' || err.name === 'TypeError');
+    if (transient && attempt < MAX_ATTEMPTS) {
+      await sleep(250 * attempt);
+      return anysiteFetch(path, options, attempt + 1);
+    }
+    throw err;
   } finally {
     clearTimeout(reqTimeout);
   }
@@ -191,7 +212,8 @@ async function resolveCompanyByDomain(query) {
   if (!query) return null;
   const cacheKey = `coresolve:${String(query).toLowerCase()}`;
   const cached = cache.get(cacheKey);
-  if (cached !== null) return cached;
+  // 'NONE' is a cached miss (a real null result); a true cache miss returns null.
+  if (cached !== null) return cached === 'NONE' ? null : cached;
 
   try {
     const data = await anysiteFetch('/api/linkedin/google/company', {
@@ -208,8 +230,10 @@ async function resolveCompanyByDomain(query) {
     } : null;
     console.log('[gtmos] resolveCompanyByDomain:', { query, found: !!result, name: result && result.name, hasUrn: !!(result && result.urn) });
     if (result) cache.set(cacheKey, result);
+    else cache.set(cacheKey, 'NONE', 10 * 60 * 1000); // brief negative cache; recovers in 10 min
     return result;
   } catch (err) {
+    // Do not cache failures — only genuine "no match" results above are cached.
     console.warn('[gtmos] resolveCompanyByDomain failed:', err.message);
     return null;
   }
@@ -242,8 +266,9 @@ async function getLinkedInPosts(profileUrn, count = 20) {
     cache.set(cacheKey, posts);
     return posts;
   } catch (err) {
+    // Do NOT cache the failure. Caching [] here would strip this profile's posts
+    // from every report for 24h after a single transient blip.
     console.warn('[gtmos] getLinkedInPosts failed:', err.message);
-    cache.set(cacheKey, []);
     return [];
   }
 }
@@ -322,8 +347,9 @@ async function getCompanyJobs(companyUrn, count = 15) {
     cache.set(cacheKey, jobs);
     return jobs;
   } catch (err) {
+    // Do NOT cache the failure (see getLinkedInPosts) — a transient error must
+    // not blank this company's jobs for 24h.
     console.warn('[gtmos] getCompanyJobs failed:', err.message);
-    cache.set(cacheKey, []);
     return [];
   }
 }
@@ -365,6 +391,9 @@ async function getCompanyDecisionMakers(rawCompanyUrn, companyName, count = 12) 
   if (cached !== null) return cached;
 
   let people = [];
+  // Only cache a result we actually trust. A transient failure must never be
+  // cached as an empty buying committee (it would blank decision-makers for 24h).
+  let cacheable = true;
 
   // 1) Title-filtered Sales-Navigator search (most precise). Only attempt it with
   // a real company URN: the SN filters reject a bare company name with a 412, and
@@ -398,6 +427,7 @@ async function getCompanyDecisionMakers(rawCompanyUrn, companyName, count = 12) 
       people = (Array.isArray(arr) ? arr : []).map(mapPerson).filter(p => p.profileUrn && isDecisionMaker(p.headline));
     } catch (err) {
       console.warn('[gtmos] employees decision-makers failed:', err.message);
+      cacheable = false;
     }
   }
 
@@ -406,7 +436,7 @@ async function getCompanyDecisionMakers(rawCompanyUrn, companyName, count = 12) 
     found: people.length,
     names: people.slice(0, 6).map(p => `${p.name} / ${(p.headline || '').slice(0, 30)}`)
   });
-  cache.set(cacheKey, people);
+  if (cacheable) cache.set(cacheKey, people);
   return people;
 }
 

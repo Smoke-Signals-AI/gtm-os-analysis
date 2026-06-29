@@ -284,13 +284,16 @@ function formatDecisionMakers(dms) {
 
 function getChatSystemPrompt({ domain, sections, enrichedPerson }) {
   const name = enrichedPerson && enrichedPerson.firstName ? enrichedPerson.firstName : null;
+  // Bound the grounding so a long report doesn't re-bill its full length as input
+  // tokens on every chat turn. ~12k chars keeps all five sections' substance while
+  // capping cost/latency for the concierge.
   const report = sections ? [
     sections.icpProfile,
     sections.uspAnalysis,
     sections.alphaSignal,
     sections.outboundSequence,
     sections.contentStrategy
-  ].filter(Boolean).join('\n\n') : '';
+  ].filter(Boolean).join('\n\n').slice(0, 12000) : '';
 
   return `You are the Smoke Signals AI concierge, chatting with a visitor on the results page of their custom GTM intelligence report for ${domain}.${name ? ` The visitor's first name is ${name}.` : ''}
 

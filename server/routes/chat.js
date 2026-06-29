@@ -13,8 +13,9 @@ router.setAnalysisStore = (fn) => { getAnalysis = fn; };
 const chatKey = (analysisId) => `chat:${analysisId}`;            // -> { messages, slackThreadTs, domain, person }
 const threadKey = (ts) => `slackthread:${ts}`;                    // -> analysisId
 
-// Slack retry de-dupe is fine to keep in-process (loss on restart is harmless).
-const seenSlackEvents = new Set();
+// Slack retry de-dupe key. Stored (shared across instances) and only set after a
+// reply is persisted, so a failed write lets Slack's retry recover it.
+const seenKey = (eventId) => `slackevt:${eventId}`;
 
 function newConvo(analysis) {
   return {
@@ -32,6 +33,12 @@ router.post('/chat/:analysisId/message', async (req, res) => {
 
   if (!text) return res.status(400).json({ error: 'Message is required.' });
   if (text.length > 2000) return res.status(400).json({ error: 'Message is too long.' });
+
+  // Each message triggers a paid model call and up to two Slack posts; throttle
+  // per conversation so a single visitor can't run up cost or flood the channel.
+  if (!(await store.checkRateLimit('chat:' + analysisId, 40, 3600))) {
+    return res.status(429).json({ error: 'You are sending messages very quickly. Give me a moment to catch up.' });
+  }
 
   const analysis = await getAnalysis(analysisId);
   if (!analysis) {
@@ -137,14 +144,6 @@ router.post('/slack/events', (req, res) => {
   if (body.type !== 'event_callback' || !body.event) return;
   const event = body.event;
 
-  // Dedupe retries
-  const eventKey = body.event_id || `${event.ts}:${event.channel}`;
-  if (eventKey) {
-    if (seenSlackEvents.has(eventKey)) return;
-    seenSlackEvents.add(eventKey);
-    if (seenSlackEvents.size > 5000) seenSlackEvents.clear();
-  }
-
   if (event.type !== 'message') return;
   // Ignore our own bot posts, edits, deletes, and non-thread channel chatter.
   if (event.bot_id || event.subtype) return;
@@ -153,14 +152,20 @@ router.post('/slack/events', (req, res) => {
   const text = stripMrkdwn(event.text || '');
   if (!text) return;
 
-  // Persist the team reply (async, after the ack).
+  const eventKey = body.event_id || `${event.ts}:${event.channel}`;
+
+  // Persist the team reply (async, after the ack). The dedupe flag is set only
+  // AFTER the write succeeds, so a transient store failure lets Slack's retry
+  // recover the reply instead of being silently suppressed.
   (async () => {
+    if (eventKey && (await store.getJSON(seenKey(eventKey)))) return;
     const analysisId = await store.getJSON(threadKey(event.thread_ts));
     if (!analysisId) return;
     const convo = await store.getJSON(chatKey(analysisId));
     if (!convo) return;
     convo.messages.push({ role: 'team', text, ts: Date.now() });
     await store.setJSON(chatKey(analysisId), convo);
+    if (eventKey) await store.setJSON(seenKey(eventKey), true, 10 * 60);
   })().catch(err => console.warn('Slack event handling error:', err.message));
 });
 
