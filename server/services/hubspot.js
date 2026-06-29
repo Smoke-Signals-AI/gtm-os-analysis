@@ -84,6 +84,7 @@ async function ensurePropertyGroup() {
 // to the new ones created here (report URL, referral attribution, lead source).
 const GTMOS_PROPERTIES = [
   { name: 'gtmos_website_url', label: 'Website URL', type: 'string', fieldType: 'text' },
+  { name: 'gtmos_linkedin_url', label: 'LinkedIn URL', type: 'string', fieldType: 'text' },
   { name: 'gtmos_report_url', label: 'GTM OS - Report URL', type: 'string', fieldType: 'text' },
   { name: 'gtmos_referred_report_url', label: 'GTM OS - Referred Report URL', type: 'string', fieldType: 'text' },
   { name: 'gtmos_lead_source', label: 'GTM OS - Lead Source', type: 'string', fieldType: 'text' },
@@ -134,6 +135,7 @@ async function ensureProperties() {
 async function pushAnalysisToContact(contactId, analysisData) {
   const properties = {
     gtmos_website_url: analysisData.websiteUrl || '',
+    gtmos_linkedin_url: analysisData.linkedinUrl || '',
     gtmos_report_url: analysisData.reportUrl || '',
     gtmos_icp_profile: truncate(analysisData.icpProfile),
     gtmos_usp_analysis: truncate(analysisData.uspAnalysis),

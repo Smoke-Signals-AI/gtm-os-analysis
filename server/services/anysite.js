@@ -366,16 +366,25 @@ async function getCompanyDecisionMakers(rawCompanyUrn, companyName, count = 12) 
 
   let people = [];
 
-  // 1) Title-filtered search (most precise).
-  try {
-    const data = await anysiteFetch('/api/linkedin/sn_search/users', {
-      method: 'POST',
-      body: JSON.stringify({ current_companies: companyUrn || companyName, current_titles: DECISION_MAKER_TITLES, count, timeout: 300 })
-    });
-    const arr = Array.isArray(data) ? data : (data.results || data.data || []);
-    people = (Array.isArray(arr) ? arr : []).map(mapPerson).filter(p => p.profileUrn);
-  } catch (err) {
-    console.warn('[gtmos] sn_search decision-makers failed:', err.message);
+  // 1) Title-filtered Sales-Navigator search (most precise). Only attempt it with
+  // a real company URN: the SN filters reject a bare company name with a 412, and
+  // the payload wants `current_companies` as a SET of URNs, mirroring the jobs
+  // endpoint (a bare string also 412s). When this tier is unavailable the employee
+  // fallback below still produces the buying committee.
+  if (companyUrn) {
+    try {
+      const data = await anysiteFetch('/api/linkedin/sn_search/users', {
+        method: 'POST',
+        body: JSON.stringify({ current_companies: [companyUrn], current_titles: DECISION_MAKER_TITLES, count, timeout: 300 })
+      });
+      const arr = Array.isArray(data) ? data : (data.results || data.data || []);
+      people = (Array.isArray(arr) ? arr : []).map(mapPerson).filter(p => p.profileUrn);
+    } catch (err) {
+      // 412 just means this search tier isn't available for the company/account;
+      // the employee fallback handles it, so don't log it as an error every run.
+      if (err.status === 412) console.log('[gtmos] sn_search unavailable (412), using employee fallback');
+      else console.warn('[gtmos] sn_search decision-makers failed:', err.message);
+    }
   }
 
   // 2) Fallback: list employees, keep the decision-makers by headline.
