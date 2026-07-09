@@ -18,7 +18,33 @@ Signal-based GTM intelligence app. Visitors enter their email and company websit
 1. Visitor submits email + website.
 2. In parallel: website scrape, CRM lookup, BuiltWith check, LinkedIn profile enrichment, then the reader's recent LinkedIn posts, the company's open jobs, and the company profile (logo + facts).
 3. Claude streams a five-section GTM report. The frontend renders it live (perceived speed), then upgrades to the full interactive layout (alpha-signal micro-app, sequence timeline).
-4. On the results page, an AI concierge answers questions grounded in the visitor's report. Conversations relay to a Slack channel; teammates can reply in the thread and it appears in the widget.
+4. In parallel with the report, the submission is ICP-graded (see below). The grade is written to the contact in HubSpot, and any submission that passes pings the sales channel in Slack.
+5. On the results page, an AI concierge answers questions grounded in the visitor's report. Conversations relay to a Slack channel; teammates can reply in the thread and it appears in the widget.
+
+## ICP grading
+
+Every submission gets a grade (`server/services/icp.js`), written to the
+`gtmos_icp_grade` contact property (created automatically) with the audit trail
+in `gtmos_icp_grade_detail`. The rules:
+
+- **F** — no HubSpot detected on their site, or the company is a
+  HubSpot/growth/marketing agency (a Haiku classifier reads the scraped website
+  to make the agency call). Nothing else is evaluated.
+- **C** — has HubSpot and is not an agency (the floor for a pass; under 10
+  employees or unknown headcount stays here).
+- **B** — 10–25 employees.
+- **A** — more than 25 employees.
+
+The submitter's title (from LinkedIn enrichment) then adjusts downward only:
+below director (manager/analyst/associate/…) caps the grade at B; an unknown
+title demotes one level (A→B, B→C — C is the floor, an unknown title never
+fails anyone); director level and above changes nothing. Whether the company's
+buyers are active on LinkedIn is captured as an informational signal (it does
+not move the grade) and shown in the Slack notification.
+
+Any submission grading C or better posts a notification to the sales channel
+(`SLACK_SALES_CHANNEL_ID`, default `#sales`). The bot only has `chat:write`,
+so invite it to the channel once: `/invite @GTM OS Concierge`.
 
 ## Setup
 
@@ -37,6 +63,7 @@ ANYSITE_API_KEY=        # Anysite.io API key
 ANTHROPIC_API_KEY=      # Anthropic API key
 SLACK_BOT_TOKEN=        # (optional) xoxb-... bot token with chat:write
 SLACK_CHANNEL_ID=       # (optional) channel for visitor conversations, e.g. C0123ABCD
+SLACK_SALES_CHANNEL_ID= # (optional) channel for ICP-qualified lead notifications; defaults to #sales (C0AHAMMDLCX)
 SLACK_SIGNING_SECRET=   # (optional) verifies inbound Slack Events API requests
 PORT=3000
 ```

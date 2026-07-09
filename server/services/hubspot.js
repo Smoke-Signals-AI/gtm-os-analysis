@@ -149,7 +149,20 @@ const GTMOS_PROPERTIES = [
   { name: 'gtmos_completed_at', label: 'GTM OS - Completed At', type: 'datetime', fieldType: 'date' },
   { name: 'gtmos_model_used', label: 'Model Used', type: 'string', fieldType: 'text' },
   { name: 'gtmos_tools_tried', label: 'GTM Tools Tried', type: 'string', fieldType: 'text' },
-  { name: 'gtmos_demand_capture_owner', label: 'Demand Capture Owner', type: 'string', fieldType: 'text' }
+  { name: 'gtmos_demand_capture_owner', label: 'Demand Capture Owner', type: 'string', fieldType: 'text' },
+  // ICP grade from the automated scoring (services/icp.js). Checked 2026-07:
+  // the portal has no existing grade property (gtmos_report_icp and
+  // gtmos_icp_profile hold report text), so this dropdown is ours to create.
+  {
+    name: 'gtmos_icp_grade', label: 'GTM OS - ICP Grade', type: 'enumeration', fieldType: 'select',
+    options: [
+      { label: 'A - Strong fit', value: 'A' },
+      { label: 'B - Good fit', value: 'B' },
+      { label: 'C - Baseline fit', value: 'C' },
+      { label: 'F - Not a fit', value: 'F' }
+    ]
+  },
+  { name: 'gtmos_icp_grade_detail', label: 'GTM OS - ICP Grade Detail', type: 'string', fieldType: 'textarea' }
 ];
 
 async function ensureProperties() {
@@ -173,7 +186,8 @@ async function ensureProperties() {
           label: prop.label,
           type: prop.type,
           fieldType: prop.fieldType,
-          groupName: 'gtm_os'
+          groupName: 'gtm_os',
+          ...(prop.options ? { options: prop.options.map((o, i) => ({ ...o, displayOrder: i })) } : {})
         })
       });
     } catch (err) {
@@ -214,6 +228,20 @@ async function pushAnalysisToContact(contactId, analysisData) {
   return writeDroppingInvalidProps(p => updateContact(contactId, p), properties, 'analysis');
 }
 
+// Write the ICP grade + audit trail. A separate write from the analysis push
+// on purpose: the grade lands as soon as scoring finishes, even when the
+// visitor abandons the page mid-generation and the analysis push never runs.
+// ensureProperties first so the enum property exists before the first-ever
+// write (scoring finishes much earlier in the pipeline than the analysis push).
+async function pushIcpGrade(contactId, { grade, detail }) {
+  if (!contactId || !grade) return;
+  await ensureProperties().catch(() => { /* best effort; the write may still succeed */ });
+  return writeDroppingInvalidProps(p => updateContact(contactId, p), {
+    gtmos_icp_grade: grade,
+    gtmos_icp_grade_detail: truncate(detail || '', 5000)
+  }, 'icp-grade');
+}
+
 function truncate(str, max = 65000) {
   if (!str) return '';
   return str.length > max ? str.slice(0, max) : str;
@@ -250,5 +278,6 @@ module.exports = {
   updateContact,
   ensureProperties,
   pushAnalysisToContact,
+  pushIcpGrade,
   recordSharedReportView
 };

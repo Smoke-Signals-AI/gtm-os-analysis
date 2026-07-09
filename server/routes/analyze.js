@@ -5,6 +5,8 @@ const hubspot = require('../services/hubspot');
 const anysite = require('../services/anysite');
 const scraper = require('../services/scraper');
 const anthropic = require('../services/anthropic');
+const icp = require('../services/icp');
+const slack = require('../services/slack');
 const store = require('../utils/store');
 
 const router = express.Router();
@@ -171,6 +173,56 @@ router.post('/analyze', async (req, res) => {
 
     sendProgress('enrichment', 'Research complete. Building your signal strategy...');
 
+    // Shareable results URL for this report (written to HubSpot below so the
+    // link to the visitor's results lives on their contact record, and included
+    // in the sales notification).
+    const reportUrl = `${req.protocol}://${req.get('host')}/?report=${encodeURIComponent(analysisId)}`;
+
+    // ICP scoring runs alongside report generation (it needs the same inputs
+    // and nothing from the report). Best-effort: a scoring failure must never
+    // block or fail the visitor's analysis.
+    const icpPromise = icp.evaluateIcp({
+      usesHubSpot,
+      websiteResearch: research,
+      domain,
+      companyProfile,
+      enrichedPerson
+    }).catch(err => {
+      console.warn('[gtmos] ICP evaluation failed:', err.message);
+      return null;
+    });
+
+    // Grade write + sales notification hang off the scoring promise directly,
+    // NOT off analysis completion: a visitor who closes the tab mid-generation
+    // still submitted, so their grade still lands in HubSpot and sales still
+    // hears about every submission that passes ICP (grade C or better).
+    icpPromise.then((icpResult) => {
+      if (!icpResult) return;
+      console.log('[gtmos] icp:', {
+        grade: icpResult.grade,
+        isAgency: icpResult.isAgency,
+        headcountBand: icpResult.headcountBand,
+        titleLevel: icpResult.titleLevel,
+        buyersOnLinkedIn: icpResult.buyersOnLinkedIn
+      });
+      if (contactId) {
+        hubspot.pushIcpGrade(contactId, { grade: icpResult.grade, detail: icpResult.detail })
+          .catch(err => console.error('HubSpot ICP grade write error:', err.message));
+      }
+      if (icpResult.grade !== 'F') {
+        slack.notifySalesLead({
+          grade: icpResult.grade,
+          companyName,
+          domain,
+          email,
+          person: enrichedPerson,
+          icp: icpResult,
+          reportUrl,
+          hubspotPortalId
+        }).catch(err => console.warn('Slack sales notification error:', err.message));
+      }
+    }).catch(err => console.warn('[gtmos] ICP follow-through error:', err.message));
+
     // AI Analysis (streamed). Model tier depends on BuiltWith result.
     sendProgress('analysis', usesHubSpot
       ? 'Deploying premium analysis engine...'
@@ -217,6 +269,10 @@ router.post('/analyze', async (req, res) => {
 
     sendProgress('saving', 'Finalizing your report...');
 
+    // Scoring is long done by the time the report finishes streaming; folded
+    // into the stored analysis for internal reference (never sent to the client).
+    const icpResult = await icpPromise;
+
     // Store analysis for PDF generation + chat grounding
     const storedAnalysis = {
       id: analysisId,
@@ -231,15 +287,12 @@ router.post('/analyze', async (req, res) => {
       companyLogoUrl,
       companyName,
       enrichedPerson,
+      icp: icpResult,
       jobPostingsCount: Array.isArray(jobPostings) ? jobPostings.length : 0,
       postsCount: Array.isArray(linkedinPosts) ? linkedinPosts.length : 0,
       createdAt: new Date().toISOString()
     };
     await store.setJSON(analysisKey(analysisId), storedAnalysis);
-
-    // Shareable results URL for this report (also written to HubSpot below so
-    // the link to the visitor's results lives on their contact record).
-    const reportUrl = `${req.protocol}://${req.get('host')}/?report=${encodeURIComponent(analysisId)}`;
 
     // Push to HubSpot (non-blocking)
     if (contactId) {
