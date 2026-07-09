@@ -131,7 +131,7 @@ router.post('/analyze', async (req, res) => {
       runWorkstreamA(email, domain, sendProgress),
       scraper.scrapeWebsite(websiteUrl).catch(err => {
         console.error('Scraping error:', err.message);
-        return { raw: `Company website: ${websiteUrl}\nDomain: ${domain}\n(Website content could not be fully retrieved)`, meta: {}, pagesScraped: 0, usesHubSpot: false };
+        return { raw: `Company website: ${websiteUrl}\nDomain: ${domain}\n(Website content could not be fully retrieved)`, meta: {}, pagesScraped: 0, usesHubSpot: false, hubspotPortalId: '', hubspotEvidence: [] };
       })
     ]);
 
@@ -148,8 +148,9 @@ router.post('/analyze', async (req, res) => {
       }
     }
 
-    // Tier off HubSpot detected in the site source (the BuiltWith endpoint is gone).
+    // Tier off HubSpot detected on the site (tracking loader / headers / GTM).
     const usesHubSpot = Boolean(scrapeResult.usesHubSpot);
+    const hubspotPortalId = scrapeResult.hubspotPortalId || '';
     const execPostCount = Array.isArray(decisionMakers) ? decisionMakers.reduce((n, d) => n + (Array.isArray(d.posts) ? d.posts.length : 0), 0) : 0;
     console.log('[gtmos] summary:', { usesHubSpot, posts: Array.isArray(linkedinPosts) ? linkedinPosts.length : 0, jobs: Array.isArray(jobPostings) ? jobPostings.length : 0, company: (companyProfile && companyProfile.name) || 'none', logo: !!(companyProfile && companyProfile.logoUrl), decisionMakers: Array.isArray(decisionMakers) ? decisionMakers.length : 0, execPosts: execPostCount });
 
@@ -226,6 +227,7 @@ router.post('/analyze', async (req, res) => {
       fullText: analysis.fullText,
       modelUsed: analysis.modelUsed,
       usesHubSpot,
+      hubspotPortalId,
       companyLogoUrl,
       companyName,
       enrichedPerson,
@@ -252,6 +254,7 @@ router.post('/analyze', async (req, res) => {
         contentStrategy: analysis.sections.contentStrategy || '',
         reportNarrative: analysis.fullText,
         usesHubSpot,
+        hubspotPortalId,
         companyResearch: scrapeResult.raw.slice(0, 60000),
         modelUsed: analysis.modelUsed
       }).catch(err => console.error('HubSpot update error:', err.message));

@@ -142,6 +142,7 @@ const GTMOS_PROPERTIES = [
   { name: 'gtmos_content_strategy', label: 'Content Strategy', type: 'string', fieldType: 'textarea' },
   { name: 'gtmos_report_narrative', label: 'Report Narrative', type: 'string', fieldType: 'textarea' },
   { name: 'gtmos_crm', label: 'CRM', type: 'string', fieldType: 'text' },
+  { name: 'gtmos_hubspot_portal_id', label: 'GTM OS - HubSpot Portal ID', type: 'string', fieldType: 'text' },
   { name: 'gtmos_company_research', label: 'Company Research', type: 'string', fieldType: 'textarea' },
   // datetime, not date: the portal property was retyped to datetime in the
   // June 2026 cleanup, and the definition here must match what exists.
@@ -204,6 +205,11 @@ async function pushAnalysisToContact(contactId, analysisData) {
   // an empty string would wipe a value someone else wrote.
   if (analysisData.linkedinUrl) {
     properties.hs_linkedin_url = analysisData.linkedinUrl;
+  }
+  // Their HubSpot portal id, when detection extracted one from the tracking
+  // loader / forms embed. Only set when found — never blank an earlier value.
+  if (analysisData.hubspotPortalId) {
+    properties.gtmos_hubspot_portal_id = String(analysisData.hubspotPortalId);
   }
   return writeDroppingInvalidProps(p => updateContact(contactId, p), properties, 'analysis');
 }
