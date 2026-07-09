@@ -12,9 +12,11 @@ function getClient() {
 }
 
 // Premium path uses the most capable Opus tier; standard path uses Sonnet.
+// The fast tier handles small structured classifications (ICP scoring).
 const MODELS = {
   premium: { id: 'claude-opus-4-8', label: 'opus-4.8' },
-  standard: { id: 'claude-sonnet-4-6', label: 'sonnet-4.6' }
+  standard: { id: 'claude-sonnet-4-6', label: 'sonnet-4.6' },
+  fast: { id: 'claude-haiku-4-5', label: 'haiku-4.5' }
 };
 
 // Generate the analysis with streaming. onDelta(textChunk) is invoked as tokens
@@ -109,6 +111,88 @@ async function generateChatReply({ domain, sections, enrichedPerson, history, us
     .trim();
 }
 
+// Structured classification for ICP grading. Reads the scraped website plus
+// the LinkedIn company/person facts and answers the judgment calls the grade
+// needs: is this an agency, how big are they, how senior is the submitter, and
+// do their buyers live on LinkedIn. Returns a plain object or null when the
+// response can't be parsed; callers must treat null as "no verdict", never as
+// a fail. Deterministic grading itself lives in services/icp.js.
+async function classifyICP({ websiteResearch, domain, companyProfile, enrichedPerson }) {
+  const anthropic = getClient();
+
+  const companyFacts = companyProfile ? [
+    companyProfile.name ? `Name: ${companyProfile.name}` : '',
+    companyProfile.industry ? `Industry: ${companyProfile.industry}` : '',
+    companyProfile.employeeCount ? `LinkedIn employee count: ${companyProfile.employeeCount}` : '',
+    companyProfile.description ? `LinkedIn description: ${companyProfile.description}` : ''
+  ].filter(Boolean).join('\n') : '(no LinkedIn company data)';
+
+  const personFacts = enrichedPerson ? [
+    enrichedPerson.title ? `Job title: ${enrichedPerson.title}` : '',
+    enrichedPerson.headline ? `LinkedIn headline: ${enrichedPerson.headline}` : ''
+  ].filter(Boolean).join('\n') : '';
+
+  const userPrompt = `You are qualifying an inbound lead for Smoke Signals AI (sells signal-based GTM software to B2B companies that run HubSpot).
+
+Company domain: ${domain}
+
+## LinkedIn company facts
+${companyFacts}
+
+## Person who submitted (the lead)
+${personFacts || '(no title or headline known)'}
+
+## Website research
+${String(websiteResearch || '').slice(0, 12000)}
+
+Answer these questions about the COMPANY (not the person, except where asked):
+
+1. is_agency: Is this company an agency — i.e. its business is providing marketing, growth, demand-gen, GTM, sales, RevOps, CRM-implementation, or HubSpot services/consulting to client companies (HubSpot solutions partners count)? Product companies and non-marketing service firms (accounting, legal, MSPs, etc.) are NOT agencies here.
+2. headcount_band: Best estimate of employee count, as one of "lt10" (under 10), "10-25", "gt25" (more than 25), or "unknown". Weigh the LinkedIn employee count most heavily; team pages and language like "our team of 40" also count.
+3. headcount_estimate: your single best numeric estimate of employees, or null.
+4. title_level: From the submitter's title/headline: "director_plus" (director, head of, VP, C-level, founder/owner), "below_director" (manager, analyst, associate, IC roles), or "unknown" if there is no usable title.
+5. buyers_on_linkedin: Based on who this company sells to, are their buyers/ICP the kind of professionals who are active on LinkedIn (B2B decision-makers, executives, operators)? "yes", "no" (e.g. consumers, local retail walk-ins), or "unknown".
+
+Respond with ONLY a JSON object, no markdown fence, exactly these keys:
+{"is_agency": boolean, "agency_reason": "one short clause, empty if not an agency", "headcount_band": "lt10|10-25|gt25|unknown", "headcount_estimate": number or null, "title_level": "director_plus|below_director|unknown", "buyers_on_linkedin": "yes|no|unknown", "buyers_on_linkedin_reason": "one short clause"}`;
+
+  const message = await anthropic.messages.create({
+    model: MODELS.fast.id,
+    max_tokens: 400,
+    messages: [{ role: 'user', content: stripLoneSurrogates(userPrompt) }]
+  });
+
+  const text = message.content
+    .filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join('\n');
+
+  // Tolerate a stray fence or preamble: parse the outermost {...} in the reply.
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end <= start) {
+    console.warn('[gtmos] classifyICP: no JSON object in reply:', text.slice(0, 200));
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text.slice(start, end + 1));
+  } catch (err) {
+    console.warn('[gtmos] classifyICP: JSON parse failed:', err.message, text.slice(0, 200));
+    return null;
+  }
+
+  return {
+    isAgency: parsed.is_agency === true,
+    agencyReason: typeof parsed.agency_reason === 'string' ? parsed.agency_reason : '',
+    headcountBand: typeof parsed.headcount_band === 'string' ? parsed.headcount_band : 'unknown',
+    headcountEstimate: typeof parsed.headcount_estimate === 'number' ? parsed.headcount_estimate : null,
+    titleLevel: typeof parsed.title_level === 'string' ? parsed.title_level : 'unknown',
+    buyersOnLinkedIn: typeof parsed.buyers_on_linkedin === 'string' ? parsed.buyers_on_linkedin : 'unknown',
+    buyersOnLinkedInReason: typeof parsed.buyers_on_linkedin_reason === 'string' ? parsed.buyers_on_linkedin_reason : ''
+  };
+}
+
 const SECTION_KEYS = ['icpProfile', 'uspAnalysis', 'alphaSignal', 'outboundSequence', 'contentStrategy'];
 
 // Match a section by the title's keywords rather than its number, so the report
@@ -168,4 +252,4 @@ function parseSections(text) {
   return sections;
 }
 
-module.exports = { generateAnalysis, generateChatReply };
+module.exports = { generateAnalysis, generateChatReply, classifyICP };

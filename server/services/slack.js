@@ -79,6 +79,48 @@ async function postToThread({ threadTs, text, author, person }) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Sales notifications for ICP-qualified submissions.
+//
+// Any submission that grades at least a C (i.e. passes ICP) pings the sales
+// channel. Channel is SLACK_SALES_CHANNEL_ID when set; the default is #sales
+// in the Smoke Signals workspace (C0AHAMMDLCX). The bot only has chat:write,
+// so it must be invited to the channel once (/invite @GTM OS Concierge).
+// ---------------------------------------------------------------------------
+
+const DEFAULT_SALES_CHANNEL = 'C0AHAMMDLCX'; // #sales
+
+const GRADE_EMOJI = { A: ':large_green_circle:', B: ':large_yellow_circle:', C: ':large_orange_circle:' };
+const BAND_LABELS = { lt10: 'under 10', '10-25': '10-25', gt25: '25+', unknown: 'unknown' };
+
+async function notifySalesLead({ grade, companyName, domain, email, person, icp, reportUrl, hubspotPortalId }) {
+  if (!process.env.SLACK_BOT_TOKEN) return;
+  const channel = process.env.SLACK_SALES_CHANNEL_ID || DEFAULT_SALES_CHANNEL;
+
+  const who = person && (person.firstName || person.lastName)
+    ? `${[person.firstName, person.lastName].filter(Boolean).join(' ')}${person.title ? ` — ${person.title}` : ''} (${email})`
+    : email;
+
+  const headcount = icp && icp.headcountEstimate
+    ? `~${Math.round(icp.headcountEstimate)} (${BAND_LABELS[icp.headcountBand] || 'unknown'})`
+    : BAND_LABELS[(icp && icp.headcountBand)] || 'unknown';
+
+  const lines = [
+    `${GRADE_EMOJI[grade] || ':dart:'} *ICP Grade ${grade}* — new GTM OS submission`,
+    `*${companyName || domain}* (${domain})${hubspotPortalId ? ` · HubSpot portal ${hubspotPortalId}` : ' · HubSpot detected'}`,
+    `Submitted by: ${who}`,
+    `Headcount: ${headcount} · Buyers on LinkedIn: ${(icp && icp.buyersOnLinkedIn) || 'unknown'}${icp && icp.buyersOnLinkedInReason ? ` (${icp.buyersOnLinkedInReason})` : ''}`,
+    icp && icp.reasons && icp.reasons.length ? `Scoring: ${icp.reasons.join('; ')}` : '',
+    reportUrl ? `<${reportUrl}|Open their report>` : ''
+  ].filter(Boolean);
+
+  await slackPost('chat.postMessage', {
+    channel,
+    text: lines.join('\n'),
+    unfurl_links: false
+  });
+}
+
 // Verify an inbound Slack Events API request signature.
 // `rawBody` must be the exact raw request body bytes/string.
 function verifySignature({ rawBody, timestamp, signature }) {
@@ -101,4 +143,4 @@ function verifySignature({ rawBody, timestamp, signature }) {
   }
 }
 
-module.exports = { isConfigured, startThread, postToThread, verifySignature };
+module.exports = { isConfigured, startThread, postToThread, notifySalesLead, verifySignature };
