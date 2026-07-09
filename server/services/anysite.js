@@ -126,6 +126,18 @@ async function searchPerson(firstName, company) {
   }
 }
 
+// The API sometimes returns nested objects where we want display text (e.g.
+// company: {name, urn, logo}). Unwrap to a plain string, never an object —
+// an object here flows into HubSpot contact properties and 400s the create.
+function textOrName(v) {
+  if (typeof v === 'string') return v.trim();
+  if (v && typeof v === 'object') {
+    const n = v.name || v.company_name || v.title || v.text;
+    if (typeof n === 'string') return n.trim();
+  }
+  return '';
+}
+
 // Fetch the full, documented profile by alias/URL/URN. Reliable source of the
 // fsd_profile URN (for posts) and current company (from experience).
 async function fetchFullProfile(userId) {
@@ -143,7 +155,7 @@ async function fetchFullProfile(userId) {
       lastName: p.last_name || p.lastName || '',
       headline: p.headline || '',
       profileUrn: urnString(p.urn || p.internal_id),
-      company: (exp && (exp.company || exp.company_name || exp.name)) || '',
+      company: textOrName(exp && (exp.company || exp.company_name || exp.name)),
       companyUrn: urnString(exp && (exp.company_urn || exp.companyUrn || exp.urn))
     };
   } catch (err) {
@@ -165,13 +177,13 @@ async function enrichPersonByEmail(email) {
 
   {
     const exp = firstExperience(p);
-    const company = (exp && (exp.company || exp.company_name || exp.name)) || p.company || '';
+    const company = textOrName(exp && (exp.company || exp.company_name || exp.name)) || textOrName(p.company);
     const companyUrn = urnString(exp && (exp.company_urn || exp.companyUrn || exp.urn)) || '';
 
     const result = {
       firstName: p.first_name || p.firstName || '',
       lastName: p.last_name || p.lastName || '',
-      title: (exp && (exp.title || exp.role)) || p.headline || '',
+      title: textOrName(exp && (exp.title || exp.role)) || textOrName(p.headline),
       company,
       companyUrn,
       profileUrn: urnString(p.urn || p.internal_id || p.profile_urn || p.entity_urn),

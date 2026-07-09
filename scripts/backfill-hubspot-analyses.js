@@ -48,7 +48,7 @@ function analysisPayload(a) {
   return {
     websiteUrl: a.websiteUrl || '',
     reportUrl: `${BASE_URL}/?report=${encodeURIComponent(a.id)}`,
-    linkedinUrl: (a.enrichedPerson && a.enrichedPerson.linkedinUrl) || '',
+    linkedinUrl: asText(a.enrichedPerson && a.enrichedPerson.linkedinUrl),
     icpProfile: (a.sections && a.sections.icpProfile) || '',
     uspAnalysis: (a.sections && a.sections.uspAnalysis) || '',
     alphaSignal: (a.sections && a.sections.alphaSignal) || '',
@@ -62,14 +62,30 @@ function analysisPayload(a) {
   };
 }
 
+// Stored analyses from before the anysite.js textOrName fix can carry objects
+// (e.g. company: {name, urn}) where HubSpot needs a string — one object value
+// 400s the whole create ("Cannot deserialize value of type java.lang.String").
+function asText(v) {
+  if (typeof v === 'string') return v.trim();
+  if (v && typeof v === 'object') {
+    const n = v.name || v.company_name || v.title || v.text;
+    if (typeof n === 'string') return n.trim();
+  }
+  return '';
+}
+
 // Same conservative shape runWorkstreamA uses: standard properties only.
 function contactProps(a) {
   const p = a.enrichedPerson || {};
   const props = { email: a.email };
-  if (p.firstName) props.firstname = p.firstName;
-  if (p.lastName) props.lastname = p.lastName;
-  if (p.title) props.jobtitle = p.title;
-  if (p.company) props.company = p.company;
+  const firstname = asText(p.firstName);
+  const lastname = asText(p.lastName);
+  const jobtitle = asText(p.title);
+  const company = asText(p.company);
+  if (firstname) props.firstname = firstname;
+  if (lastname) props.lastname = lastname;
+  if (jobtitle) props.jobtitle = jobtitle;
+  if (company) props.company = company;
   return props;
 }
 
