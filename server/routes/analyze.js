@@ -218,7 +218,12 @@ router.post('/analyze', async (req, res) => {
           person: enrichedPerson,
           icp: icpResult,
           reportUrl,
-          hubspotPortalId
+          hubspotPortalId,
+          // "What they do": LinkedIn's company description first (usually the
+          // cleanest self-description), else the site's own meta description.
+          companySummary: (companyProfile && companyProfile.description)
+            || (scrapeResult.meta && (scrapeResult.meta.description || scrapeResult.meta.ogDescription))
+            || ''
         }).catch(err => console.warn('Slack sales notification error:', err.message));
       }
     }).catch(err => console.warn('[gtmos] ICP follow-through error:', err.message));

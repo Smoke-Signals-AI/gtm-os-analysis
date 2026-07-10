@@ -93,7 +93,15 @@ const DEFAULT_SALES_CHANNEL = 'C0AHAMMDLCX'; // #sales
 const GRADE_EMOJI = { A: ':large_green_circle:', B: ':large_yellow_circle:', C: ':large_orange_circle:' };
 const BAND_LABELS = { lt10: 'under 10', '10-25': '10-25', gt25: '25+', unknown: 'unknown' };
 
-async function notifySalesLead({ grade, companyName, domain, email, person, icp, reportUrl, hubspotPortalId }) {
+// One-line "what they do", bounded so a long LinkedIn description can't swamp
+// the notification. Cuts on a word boundary.
+function summarize(text, max = 280) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  return t.length <= max ? t : t.slice(0, max).replace(/\s+\S*$/, '') + '…';
+}
+
+async function notifySalesLead({ grade, companyName, domain, email, person, icp, reportUrl, hubspotPortalId, companySummary }) {
   if (!process.env.SLACK_BOT_TOKEN) return;
   const channel = process.env.SLACK_SALES_CHANNEL_ID || DEFAULT_SALES_CHANNEL;
 
@@ -105,10 +113,13 @@ async function notifySalesLead({ grade, companyName, domain, email, person, icp,
     ? `~${Math.round(icp.headcountEstimate)} (${BAND_LABELS[icp.headcountBand] || 'unknown'})`
     : BAND_LABELS[(icp && icp.headcountBand)] || 'unknown';
 
+  const summary = summarize(companySummary);
+
   const lines = [
     `${GRADE_EMOJI[grade] || ':dart:'} *ICP Grade ${grade}* — new GTM OS submission`,
     `*${companyName || domain}* (${domain})${hubspotPortalId ? ` · HubSpot portal ${hubspotPortalId}` : ' · HubSpot detected'}`,
     `Submitted by: ${who}`,
+    summary ? `What they do: ${summary}` : '',
     `Headcount: ${headcount} · Buyers on LinkedIn: ${(icp && icp.buyersOnLinkedIn) || 'unknown'}${icp && icp.buyersOnLinkedInReason ? ` (${icp.buyersOnLinkedInReason})` : ''}`,
     icp && icp.reasons && icp.reasons.length ? `Scoring: ${icp.reasons.join('; ')}` : '',
     reportUrl ? `<${reportUrl}|Open their report>` : ''
