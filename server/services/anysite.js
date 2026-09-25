@@ -206,6 +206,26 @@ async function enrichPersonByEmail(email) {
   }
 }
 
+// "acme.com" from "https://www.Acme.com/about", "acme.com" or " www.acme.com ".
+function normalizeDomain(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  let s = raw.trim().toLowerCase();
+  if (!s) return null;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//.test(s)) s = `https://${s}`;
+  try {
+    const host = new URL(s).hostname.replace(/^www\./, '');
+    return host.includes('.') ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+// True when a result's website is the domain (or a subdomain of it).
+function websiteMatchesDomain(website, domain) {
+  const site = normalizeDomain(website);
+  return Boolean(site && domain && (site === domain || site.endsWith(`.${domain}`)));
+}
+
 // Resolve a company from its WEBSITE/domain (independent of any person), via
 // google/company which accepts a website as a keyword and can return the URN.
 async function resolveCompanyByDomain(query) {
@@ -221,7 +241,14 @@ async function resolveCompanyByDomain(query) {
       body: JSON.stringify({ keywords: [query], with_urn: true, count: 3 })
     });
     const arr = Array.isArray(data) ? data : (data.results || data.data || []);
-    const top = (Array.isArray(arr) ? arr : [])[0] || null;
+    // google/company matches the keyword as a SUBSTRING of company websites and
+    // sorts by headcount (per Anysite), so the first result for "acme.com" can be
+    // a bigger "acme.com.au" or "notacme.com". Only use a result whose website is
+    // the domain we asked about (or a subdomain of it).
+    const want = normalizeDomain(query);
+    const top = (Array.isArray(arr) ? arr : []).find(
+      (c) => c && websiteMatchesDomain(c.website || c.website_url || c.domain, want)
+    ) || null;
     const result = top ? {
       name: top.title || top.name || '',
       alias: top.alias || '',
@@ -444,6 +471,8 @@ module.exports = {
   enrichPersonByEmail,
   searchPerson,
   resolveCompanyByDomain,
+  normalizeDomain,
+  websiteMatchesDomain,
   getLinkedInPosts,
   getCompanyProfile,
   getCompanyJobs,
