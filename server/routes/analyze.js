@@ -42,7 +42,10 @@ function guessFirstNameFromEmail(email) {
 const analysisKey = (id) => `analysis:${id}`;
 
 router.post('/analyze', async (req, res) => {
-  const { email, website } = req.body;
+  const { website } = req.body;
+  // Normalized once here so the rate-limit key, the CRM lookup/create and the
+  // stored analysis all see the same address.
+  const email = hubspot.normalizeEmail(req.body.email);
 
   // Validate inputs
   if (!validateEmail(email)) {
@@ -406,7 +409,10 @@ async function runWorkstreamA(email, domain, sendProgress) {
       const newContact = await hubspot.createContact(contactProps);
       contactId = newContact.id;
     } catch (err) {
-      console.warn('HubSpot create error:', err.message);
+      // 409: the search missed a contact that exists. Use it rather than
+      // leaving contactId null, which silently skips every later write.
+      contactId = hubspot.existingIdFromConflict(err);
+      if (!contactId) console.warn('HubSpot create error:', err.message);
     }
   }
 
@@ -504,7 +510,7 @@ router.get('/analysis/:id', (req, res) => {
 // non-blocking) and return the report so the frontend can render it.
 router.post('/analysis/:id/unlock', async (req, res) => {
   const { id } = req.params;
-  const email = (req.body && req.body.email ? String(req.body.email) : '').trim();
+  const email = hubspot.normalizeEmail(req.body && req.body.email);
 
   if (!validateEmail(email)) {
     return res.status(400).json({ error: 'Please enter a valid email address.' });

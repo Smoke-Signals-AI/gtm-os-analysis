@@ -32,13 +32,29 @@ async function hubspotFetch(path, options = {}) {
   }
 }
 
+// HubSpot stores contact emails lowercased; a padded or mixed-case address
+// from a form misses the search and then collides on create.
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+// A create that collides on email answers 409 with the existing contact's id in
+// the message ("Contact already exists. Existing ID: 12345"). Returns that id,
+// or null when the error is anything else.
+function existingIdFromConflict(err) {
+  if (!err || err.status !== 409) return null;
+  const msg = String((err.data && err.data.message) || err.message || '');
+  const m = msg.match(/Existing ID:\s*(\d+)/i);
+  return m ? m[1] : null;
+}
+
 async function searchContactByEmail(email) {
   const body = {
     filterGroups: [{
       filters: [{
         propertyName: 'email',
         operator: 'EQ',
-        value: email
+        value: normalizeEmail(email)
       }]
     }],
     properties: ['email', 'firstname', 'lastname', 'jobtitle', 'company', 'hs_object_id', 'gtmos_completed_at', 'gtmos_report_url']
@@ -51,9 +67,11 @@ async function searchContactByEmail(email) {
 }
 
 async function createContact(properties) {
+  const props = { ...properties };
+  if (props.email) props.email = normalizeEmail(props.email);
   return hubspotFetch('/crm/v3/objects/contacts', {
     method: 'POST',
-    body: JSON.stringify({ properties })
+    body: JSON.stringify({ properties: props })
   });
 }
 
@@ -252,27 +270,37 @@ function truncate(str, max = 65000) {
 // New contacts are tagged with a lead source; existing contacts keep whatever
 // source they already had, so a shared-report view never reclassifies a lead.
 async function recordSharedReportView({ email, reportUrl }) {
+  email = normalizeEmail(email);
+  const recordView = (contactId) => writeDroppingInvalidProps(
+    p => updateContact(contactId, p),
+    { gtmos_referred_report_url: reportUrl || '' },
+    'shared-report view'
+  );
   const existing = await searchContactByEmail(email);
-  if (existing) {
-    return writeDroppingInvalidProps(
-      p => updateContact(existing.id, p),
-      { gtmos_referred_report_url: reportUrl || '' },
-      'shared-report view'
-    );
-  }
+  if (existing) return recordView(existing.id);
   // email stays outside the droppable set: a capture without the email is
   // pointless, so if HubSpot ever rejects it the create should fail outright.
-  return writeDroppingInvalidProps(
-    p => createContact({ ...p, email }),
-    {
-      gtmos_referred_report_url: reportUrl || '',
-      gtmos_lead_source: 'Shared GTM OS Report'
-    },
-    'shared-report lead'
-  );
+  try {
+    return await writeDroppingInvalidProps(
+      p => createContact({ ...p, email }),
+      {
+        gtmos_referred_report_url: reportUrl || '',
+        gtmos_lead_source: 'Shared GTM OS Report'
+      },
+      'shared-report lead'
+    );
+  } catch (err) {
+    // The search can miss a contact that exists (index lag, or a just-created
+    // one). Treat it as existing: record the view, leave its lead source alone.
+    const existingId = existingIdFromConflict(err);
+    if (!existingId) throw err;
+    return recordView(existingId);
+  }
 }
 
 module.exports = {
+  normalizeEmail,
+  existingIdFromConflict,
   searchContactByEmail,
   createContact,
   updateContact,
